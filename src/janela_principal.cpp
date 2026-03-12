@@ -167,14 +167,22 @@ void JanelaPrincipal::atualizar_avaliacao()
     const double theta = campo_theta_->value();
 
     if (const auto validacao = validar_parametros_do_modelo(modelo_catalogado, valor_inicial_em_zero, tempo_inicial, tempo_final, delta_t, theta)) {
-        rotulo_expressao_->setText(QString("Modelo selecionado: %1").arg(modelo_catalogado.expressao));
+        rotulo_expressao_->setText(
+            QString("Modelo selecionado: %1 | Derivada analitica: %2")
+                .arg(modelo_catalogado.expressao_funcao)
+                .arg(modelo_catalogado.expressao_derivada)
+        );
         rotulo_resumo_->setText(*validacao);
         grafico_funcao_->definir_mensagem(*validacao);
         tabela_resultados_->setRowCount(0);
         return;
     }
 
-    rotulo_expressao_->setText(QString("Modelo selecionado: %1").arg(modelo_catalogado.expressao));
+    rotulo_expressao_->setText(
+        QString("Modelo selecionado: %1 | Derivada analitica: %2")
+            .arg(modelo_catalogado.expressao_funcao)
+            .arg(modelo_catalogado.expressao_derivada)
+    );
     atualizar_resumo(modelo_catalogado, valor_inicial_em_zero, tempo_inicial, tempo_final, delta_t, theta);
     grafico_funcao_->definir_modelo(
         modelo_catalogado,
@@ -191,9 +199,8 @@ void JanelaPrincipal::atualizar_resumo(const ModeloCatalogado& modelo_catalogado
     const ResumoSimulacaoTheta resumo = calcular_resumo_da_simulacao(modelo_catalogado, valor_inicial_em_zero, tempo_inicial, tempo_final, delta_t);
 
     rotulo_resumo_->setText(
-        QString("%1 Lambda = %2, u(0) = %3, t inicial = %4, u(t inicial) = %5, t final = %6, delta t efetivo = %7, passos = %8, theta do usuario = %9 e u(t final) exata = %10.")
+        QString("%1 u(0) = %2, t inicial = %3, u(t inicial) = %4, t final = %5, delta t efetivo = %6, passos = %7, theta do usuario = %8 e u(t final) exata = %9.")
             .arg(modelo_catalogado.descricao)
-            .arg(modelo_catalogado.coeficiente_lambda, 0, 'g', 6)
             .arg(resumo.valor_inicial_em_zero, 0, 'g', 6)
             .arg(resumo.tempo_inicial, 0, 'g', 8)
             .arg(resumo.valor_inicial_no_tempo, 0, 'g', 10)

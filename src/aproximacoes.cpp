@@ -4,6 +4,9 @@
 #include <cmath>
 
 namespace {
+constexpr int quantidade_maxima_iteracoes = 40;
+constexpr double tolerancia_iteracao = 1e-10;
+
 double calcular_erro_absoluto(double valor_aproximado, double valor_exato)
 {
     return std::abs(valor_aproximado - valor_exato);
@@ -15,18 +18,47 @@ double limitar_theta(double theta)
 }
 }
 
-double avancar_metodo_theta(double valor_atual, double coeficiente_lambda, double delta_t, double theta)
+double avancar_metodo_theta(
+    const std::function<double(double, double)>& lado_direito,
+    double tempo_atual,
+    double valor_atual,
+    double delta_t,
+    double theta
+)
 {
     const double theta_limitado = limitar_theta(theta);
-    const double numerador = valor_atual * (1.0 + (1.0 - theta_limitado) * coeficiente_lambda * delta_t);
-    const double denominador = 1.0 - theta_limitado * coeficiente_lambda * delta_t;
+    const double tempo_seguinte = tempo_atual + delta_t;
+    const double contribuicao_explicita = valor_atual + delta_t * (1.0 - theta_limitado) * lado_direito(tempo_atual, valor_atual);
 
-    return numerador / denominador;
+    if (theta_limitado <= 1e-12) {
+        return contribuicao_explicita;
+    }
+
+    double valor_iterado = contribuicao_explicita;
+    for (int iteracao = 0; iteracao < quantidade_maxima_iteracoes; ++iteracao) {
+        const double proximo_valor = contribuicao_explicita + delta_t * theta_limitado * lado_direito(tempo_seguinte, valor_iterado);
+        if (std::abs(proximo_valor - valor_iterado) < tolerancia_iteracao) {
+            return proximo_valor;
+        }
+        valor_iterado = proximo_valor;
+    }
+
+    return valor_iterado;
 }
 
-double calcular_solucao_pelo_metodo_theta(double valor_inicial, double coeficiente_lambda, double tempo_inicial, double tempo_final, double delta_t, double theta, int& quantidade_passos, double& delta_t_efetivo)
+double calcular_solucao_pelo_metodo_theta(
+    const std::function<double(double, double)>& lado_direito,
+    double valor_inicial,
+    double tempo_inicial,
+    double tempo_final,
+    double delta_t,
+    double theta,
+    int& quantidade_passos,
+    double& delta_t_efetivo
+)
 {
     const double intervalo_total = tempo_final - tempo_inicial;
+    double tempo_atual = tempo_inicial;
     double valor_atual = valor_inicial;
     const double direcao = intervalo_total >= 0.0 ? 1.0 : -1.0;
     const double delta_t_assinado = direcao * delta_t;
@@ -36,16 +68,18 @@ double calcular_solucao_pelo_metodo_theta(double valor_inicial, double coeficien
 
     quantidade_passos = quantidade_passos_completos;
     for (int passo = 0; passo < quantidade_passos_completos; ++passo) {
-        valor_atual = avancar_metodo_theta(valor_atual, coeficiente_lambda, delta_t_assinado, theta);
+        valor_atual = avancar_metodo_theta(lado_direito, tempo_atual, valor_atual, delta_t_assinado, theta);
+        tempo_atual += delta_t_assinado;
     }
 
     if (duracao_restante > 1e-12) {
-        valor_atual = avancar_metodo_theta(valor_atual, coeficiente_lambda, direcao * duracao_restante, theta);
+        const double ultimo_passo = direcao * duracao_restante;
+        valor_atual = avancar_metodo_theta(lado_direito, tempo_atual, valor_atual, ultimo_passo, theta);
         ++quantidade_passos;
     }
 
     if (quantidade_passos == 0) {
-        valor_atual = avancar_metodo_theta(valor_atual, coeficiente_lambda, intervalo_total, theta);
+        valor_atual = avancar_metodo_theta(lado_direito, tempo_atual, valor_atual, intervalo_total, theta);
         quantidade_passos = 1;
         delta_t_efetivo = intervalo_total;
         return valor_atual;
@@ -55,12 +89,16 @@ double calcular_solucao_pelo_metodo_theta(double valor_inicial, double coeficien
     return valor_atual;
 }
 
-double calcular_solucao_exata(double valor_inicial_em_zero, double coeficiente_lambda, double tempo)
-{
-    return valor_inicial_em_zero * std::exp(coeficiente_lambda * tempo);
-}
-
-TrajetoriaMetodo calcular_trajetoria_pelo_metodo_theta(const QString& nome_metodo, const QColor& cor, double valor_inicial, double coeficiente_lambda, double tempo_inicial, double tempo_final, double delta_t, double theta)
+TrajetoriaMetodo calcular_trajetoria_pelo_metodo_theta(
+    const QString& nome_metodo,
+    const QColor& cor,
+    const std::function<double(double, double)>& lado_direito,
+    double valor_inicial,
+    double tempo_inicial,
+    double tempo_final,
+    double delta_t,
+    double theta
+)
 {
     TrajetoriaMetodo trajetoria{nome_metodo, cor, {{tempo_inicial, valor_inicial}}};
 
@@ -75,18 +113,18 @@ TrajetoriaMetodo calcular_trajetoria_pelo_metodo_theta(const QString& nome_metod
     double valor_atual = valor_inicial;
 
     for (int passo = 0; passo < quantidade_passos_completos; ++passo) {
-        valor_atual = avancar_metodo_theta(valor_atual, coeficiente_lambda, delta_t_assinado, theta);
+        valor_atual = avancar_metodo_theta(lado_direito, tempo_atual, valor_atual, delta_t_assinado, theta);
         tempo_atual += delta_t_assinado;
         trajetoria.pontos.push_back({tempo_atual, valor_atual});
     }
 
     if (duracao_restante > 1e-12) {
         const double ultimo_passo = direcao * duracao_restante;
-        valor_atual = avancar_metodo_theta(valor_atual, coeficiente_lambda, ultimo_passo, theta);
+        valor_atual = avancar_metodo_theta(lado_direito, tempo_atual, valor_atual, ultimo_passo, theta);
         tempo_atual += ultimo_passo;
         trajetoria.pontos.push_back({tempo_atual, valor_atual});
     } else if (quantidade_passos_completos == 0) {
-        valor_atual = avancar_metodo_theta(valor_atual, coeficiente_lambda, intervalo_total, theta);
+        valor_atual = avancar_metodo_theta(lado_direito, tempo_atual, valor_atual, intervalo_total, theta);
         tempo_atual = tempo_final;
         trajetoria.pontos.push_back({tempo_atual, valor_atual});
     }
@@ -99,35 +137,47 @@ std::vector<ModeloCatalogado> criar_catalogo_de_modelos()
     return {
         {
             "Crescimento Exponencial",
-            "Modelo teste com crescimento suave.",
-            "u'(t) = 1.0 * u(t), u(0) = 1.0, u(t) = e^t",
-            1.0
+            "Modelo com solucao exponencial crescente.",
+            "u(t) = u(0)e^t",
+            "u'(t) = u(t)",
+            [](double u_zero, double t) { return u_zero * std::exp(t); },
+            [](double u_zero, double t) { return u_zero * std::exp(t); },
+            [](double, double u) { return u; }
         },
         {
             "Decaimento Exponencial",
-            "Modelo teste com relaxacao unitria.",
-            "u'(t) = -1.0 * u(t), u(0) = 1.0, u(t) = e^(-t)",
-            -1.0
+            "Modelo com solucao exponencial decrescente.",
+            "u(t) = u(0)e^(-t)",
+            "u'(t) = -u(t)",
+            [](double u_zero, double t) { return u_zero * std::exp(-t); },
+            [](double u_zero, double t) { return -u_zero * std::exp(-t); },
+            [](double, double u) { return -u; }
         },
         {
-            "Decaimento Rigido",
-            "Modelo teste mais rigido para observar estabilidade numerica.",
-            "u'(t) = -10.0 * u(t), u(0) = 1.0, u(t) = e^(-10t)",
-            -10.0
+            "Polinomial Cubico",
+            "Modelo polinomial para testar estimativas em derivadas nao lineares no tempo.",
+            "u(t) = u(0) + t^3 - 2t^2 + t",
+            "u'(t) = 3t^2 - 4t + 1",
+            [](double u_zero, double t) { return u_zero + (t * t * t) - (2.0 * t * t) + t; },
+            [](double, double t) { return (3.0 * t * t) - (4.0 * t) + 1.0; },
+            [](double t, double) { return (3.0 * t * t) - (4.0 * t) + 1.0; }
         },
         {
-            "Crescimento com Escala",
-            "Modelo teste com valor inicial diferente de um.",
-            "u'(t) = 2.0 * u(t), u(0) = 0.5, u(t) = 0.5e^(2t)",
-            2.0
+            "Polinomial Quadratico",
+            "Modelo polinomial simples para comparacao em malhas mais grossas.",
+            "u(t) = u(0) + 0.5t^2 - 3t",
+            "u'(t) = t - 3",
+            [](double u_zero, double t) { return u_zero + 0.5 * t * t - 3.0 * t; },
+            [](double, double t) { return t - 3.0; },
+            [](double t, double) { return t - 3.0; }
         }
     };
 }
 
 std::vector<ResultadoMetodo> calcular_resultados(const ModeloCatalogado& modelo_catalogado, double valor_inicial_em_zero, double tempo_inicial, double tempo_final, double delta_t, double theta_usuario)
 {
-    const double valor_inicial_no_tempo = calcular_solucao_exata(valor_inicial_em_zero, modelo_catalogado.coeficiente_lambda, tempo_inicial);
-    const double valor_exato = calcular_solucao_exata(valor_inicial_em_zero, modelo_catalogado.coeficiente_lambda, tempo_final);
+    const double valor_inicial_no_tempo = modelo_catalogado.funcao_exata(valor_inicial_em_zero, tempo_inicial);
+    const double valor_exato = modelo_catalogado.funcao_exata(valor_inicial_em_zero, tempo_final);
 
     std::vector<ResultadoMetodo> resultados;
     resultados.reserve(4);
@@ -136,8 +186,8 @@ std::vector<ResultadoMetodo> calcular_resultados(const ModeloCatalogado& modelo_
         int quantidade_passos = 0;
         double delta_t_efetivo = 0.0;
         const double valor_aproximado = calcular_solucao_pelo_metodo_theta(
+            modelo_catalogado.lado_direito,
             valor_inicial_no_tempo,
-            modelo_catalogado.coeficiente_lambda,
             tempo_inicial,
             tempo_final,
             delta_t,
@@ -166,11 +216,11 @@ ResumoSimulacaoTheta calcular_resumo_da_simulacao(const ModeloCatalogado& modelo
 {
     int quantidade_passos = 0;
     double delta_t_efetivo = 0.0;
-    const double valor_inicial_no_tempo = calcular_solucao_exata(valor_inicial_em_zero, modelo_catalogado.coeficiente_lambda, tempo_inicial);
+    const double valor_inicial_no_tempo = modelo_catalogado.funcao_exata(valor_inicial_em_zero, tempo_inicial);
 
     calcular_solucao_pelo_metodo_theta(
+        modelo_catalogado.lado_direito,
         valor_inicial_no_tempo,
-        modelo_catalogado.coeficiente_lambda,
         tempo_inicial,
         tempo_final,
         delta_t,
@@ -186,7 +236,7 @@ ResumoSimulacaoTheta calcular_resumo_da_simulacao(const ModeloCatalogado& modelo
         quantidade_passos,
         valor_inicial_em_zero,
         valor_inicial_no_tempo,
-        calcular_solucao_exata(valor_inicial_em_zero, modelo_catalogado.coeficiente_lambda, tempo_final)
+        modelo_catalogado.funcao_exata(valor_inicial_em_zero, tempo_final)
     };
 }
 
@@ -212,12 +262,12 @@ std::optional<QString> validar_parametros_do_modelo(const ModeloCatalogado& mode
 
 std::vector<TrajetoriaMetodo> calcular_trajetorias(const ModeloCatalogado& modelo_catalogado, double valor_inicial_em_zero, double tempo_inicial, double tempo_final, double delta_t, double theta_usuario)
 {
-    const double valor_inicial_no_tempo = calcular_solucao_exata(valor_inicial_em_zero, modelo_catalogado.coeficiente_lambda, tempo_inicial);
+    const double valor_inicial_no_tempo = modelo_catalogado.funcao_exata(valor_inicial_em_zero, tempo_inicial);
 
     return {
-        calcular_trajetoria_pelo_metodo_theta("Explicito", QColor(255, 107, 107), valor_inicial_no_tempo, modelo_catalogado.coeficiente_lambda, tempo_inicial, tempo_final, delta_t, 0.0),
-        calcular_trajetoria_pelo_metodo_theta("Semi-implicito", QColor(255, 193, 77), valor_inicial_no_tempo, modelo_catalogado.coeficiente_lambda, tempo_inicial, tempo_final, delta_t, 0.5),
-        calcular_trajetoria_pelo_metodo_theta("Implicito", QColor(114, 197, 255), valor_inicial_no_tempo, modelo_catalogado.coeficiente_lambda, tempo_inicial, tempo_final, delta_t, 1.0),
-        calcular_trajetoria_pelo_metodo_theta(QString("Theta = %1").arg(theta_usuario, 0, 'g', 4), QColor(186, 139, 255), valor_inicial_no_tempo, modelo_catalogado.coeficiente_lambda, tempo_inicial, tempo_final, delta_t, theta_usuario)
+        calcular_trajetoria_pelo_metodo_theta("Explicito", QColor(255, 107, 107), modelo_catalogado.lado_direito, valor_inicial_no_tempo, tempo_inicial, tempo_final, delta_t, 0.0),
+        calcular_trajetoria_pelo_metodo_theta("Semi-implicito", QColor(255, 193, 77), modelo_catalogado.lado_direito, valor_inicial_no_tempo, tempo_inicial, tempo_final, delta_t, 0.5),
+        calcular_trajetoria_pelo_metodo_theta("Implicito", QColor(114, 197, 255), modelo_catalogado.lado_direito, valor_inicial_no_tempo, tempo_inicial, tempo_final, delta_t, 1.0),
+        calcular_trajetoria_pelo_metodo_theta(QString("Theta = %1").arg(theta_usuario, 0, 'g', 4), QColor(186, 139, 255), modelo_catalogado.lado_direito, valor_inicial_no_tempo, tempo_inicial, tempo_final, delta_t, theta_usuario)
     };
 }

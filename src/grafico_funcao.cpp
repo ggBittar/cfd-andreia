@@ -26,6 +26,7 @@ GraficoFuncao::GraficoFuncao(QWidget* pai)
 {
     setMinimumHeight(260);
     setAutoFillBackground(true);
+    setMouseTracking(true);
 }
 
 void GraficoFuncao::definir_modelo(const ModeloCatalogado& modelo_catalogado, double valor_inicial_em_zero, double tempo_inicial, double tempo_final, std::vector<TrajetoriaMetodo> trajetorias)
@@ -37,6 +38,7 @@ void GraficoFuncao::definir_modelo(const ModeloCatalogado& modelo_catalogado, do
     trajetorias_ = std::move(trajetorias);
     possui_modelo_ = true;
     mensagem_.clear();
+    redefinir_zoom();
     update();
 }
 
@@ -44,6 +46,7 @@ void GraficoFuncao::definir_mensagem(const QString& mensagem)
 {
     mensagem_ = mensagem;
     possui_modelo_ = false;
+    zoom_personalizado_ = false;
     update();
 }
 
@@ -72,40 +75,16 @@ void GraficoFuncao::paintEvent(QPaintEvent* evento)
         return;
     }
 
-    const double menor_tempo = std::min(tempo_inicial_, tempo_final_);
-    const double maior_tempo = std::max(tempo_inicial_, tempo_final_);
-    const double margem_horizontal = std::max(0.5, (maior_tempo - menor_tempo) * 0.2);
-    const double x_minimo = menor_tempo - margem_horizontal;
-    const double x_maximo = maior_tempo + margem_horizontal;
+    double x_minimo = 0.0;
+    double x_maximo = 0.0;
+    double y_minimo = 0.0;
+    double y_maximo = 0.0;
+    recalcular_limites_automaticos(x_minimo, x_maximo, y_minimo, y_maximo);
 
-    double y_minimo = std::numeric_limits<double>::infinity();
-    double y_maximo = -std::numeric_limits<double>::infinity();
-
-    for (int indice = 0; indice <= 240; ++indice) {
-        const double x = x_minimo + (x_maximo - x_minimo) * static_cast<double>(indice) / 240.0;
-        const double y = calcular_solucao_exata(valor_inicial_em_zero_, modelo_catalogado_.coeficiente_lambda, x);
-
-        if (!valor_finito(y)) {
-            continue;
-        }
-
-        y_minimo = std::min(y_minimo, y);
-        y_maximo = std::max(y_maximo, y);
-    }
-
-    if (!valor_finito(y_minimo) || !valor_finito(y_maximo)) {
+    if (!valor_finito(y_minimo) || !valor_finito(y_maximo) || !valor_finito(x_minimo) || !valor_finito(x_maximo)) {
         pintor.setPen(QColor(226, 149, 120));
         pintor.drawText(area, Qt::AlignCenter, "Nao foi possivel desenhar a solucao exata nessa faixa.");
         return;
-    }
-
-    if (std::abs(y_maximo - y_minimo) < 1e-9) {
-        y_minimo -= 1.0;
-        y_maximo += 1.0;
-    } else {
-        const double margem_vertical = (y_maximo - y_minimo) * 0.15;
-        y_minimo -= margem_vertical;
-        y_maximo += margem_vertical;
     }
 
     desenhar_grade(pintor, area, x_minimo, x_maximo, y_minimo, y_maximo);
@@ -115,7 +94,11 @@ void GraficoFuncao::paintEvent(QPaintEvent* evento)
     desenhar_legenda(pintor, area);
 
     pintor.setPen(QColor(214, 220, 230));
-    pintor.drawText(QRectF(area.left(), 4, area.width(), 18), Qt::AlignCenter, modelo_catalogado_.expressao);
+    pintor.drawText(
+        QRectF(area.left(), 4, area.width(), 18),
+        Qt::AlignCenter,
+        QString("%1 | %2").arg(modelo_catalogado_.expressao_funcao).arg(modelo_catalogado_.expressao_derivada)
+    );
 }
 
 QRectF GraficoFuncao::area_do_grafico() const
@@ -137,6 +120,120 @@ QPointF GraficoFuncao::mapear_para_tela(double x, double y, const QRectF& area, 
         area.left() + x_normalizado * area.width(),
         area.bottom() - y_normalizado * area.height()
     );
+}
+
+double GraficoFuncao::mapear_para_modelo_x(double x_tela, const QRectF& area, double x_minimo, double x_maximo) const
+{
+    const double proporcao = (x_tela - area.left()) / area.width();
+    return x_minimo + proporcao * (x_maximo - x_minimo);
+}
+
+void GraficoFuncao::recalcular_limites_automaticos(double& x_minimo, double& x_maximo, double& y_minimo, double& y_maximo) const
+{
+    if (zoom_personalizado_) {
+        x_minimo = x_minimo_visivel_;
+        x_maximo = x_maximo_visivel_;
+        y_minimo = y_minimo_visivel_;
+        y_maximo = y_maximo_visivel_;
+        return;
+    }
+
+    const double menor_tempo = std::min(tempo_inicial_, tempo_final_);
+    const double maior_tempo = std::max(tempo_inicial_, tempo_final_);
+    const double margem_horizontal = std::max(0.5, (maior_tempo - menor_tempo) * 0.2);
+    x_minimo = menor_tempo - margem_horizontal;
+    x_maximo = maior_tempo + margem_horizontal;
+
+    y_minimo = std::numeric_limits<double>::infinity();
+    y_maximo = -std::numeric_limits<double>::infinity();
+
+    for (int indice = 0; indice <= 240; ++indice) {
+        const double x = x_minimo + (x_maximo - x_minimo) * static_cast<double>(indice) / 240.0;
+        const double y = modelo_catalogado_.funcao_exata(valor_inicial_em_zero_, x);
+
+        if (!valor_finito(y)) {
+            continue;
+        }
+
+        y_minimo = std::min(y_minimo, y);
+        y_maximo = std::max(y_maximo, y);
+    }
+
+    for (const TrajetoriaMetodo& trajetoria : trajetorias_) {
+        for (const PontoSimulacao& ponto : trajetoria.pontos) {
+            if (!valor_finito(ponto.valor)) {
+                continue;
+            }
+            y_minimo = std::min(y_minimo, ponto.valor);
+            y_maximo = std::max(y_maximo, ponto.valor);
+        }
+    }
+
+    if (std::abs(y_maximo - y_minimo) < 1e-9) {
+        y_minimo -= 1.0;
+        y_maximo += 1.0;
+    } else {
+        const double margem_vertical = (y_maximo - y_minimo) * 0.15;
+        y_minimo -= margem_vertical;
+        y_maximo += margem_vertical;
+    }
+}
+
+void GraficoFuncao::redefinir_zoom()
+{
+    zoom_personalizado_ = false;
+    recalcular_limites_automaticos(x_minimo_visivel_, x_maximo_visivel_, y_minimo_visivel_, y_maximo_visivel_);
+}
+
+void GraficoFuncao::wheelEvent(QWheelEvent* evento)
+{
+    if (!possui_modelo_ || !mensagem_.isEmpty()) {
+        evento->ignore();
+        return;
+    }
+
+    const QRectF area = area_do_grafico();
+    if (!area.contains(evento->position())) {
+        evento->ignore();
+        return;
+    }
+
+    double x_minimo = 0.0;
+    double x_maximo = 0.0;
+    double y_minimo = 0.0;
+    double y_maximo = 0.0;
+    recalcular_limites_automaticos(x_minimo, x_maximo, y_minimo, y_maximo);
+
+    const double fator = evento->angleDelta().y() > 0 ? 0.85 : 1.15;
+    const double centro_x = mapear_para_modelo_x(evento->position().x(), area, x_minimo, x_maximo);
+    const double centro_y = y_maximo - ((evento->position().y() - area.top()) / area.height()) * (y_maximo - y_minimo);
+
+    const double nova_largura = std::max(0.001, (x_maximo - x_minimo) * fator);
+    const double nova_altura = std::max(0.001, (y_maximo - y_minimo) * fator);
+
+    const double proporcao_x = (centro_x - x_minimo) / (x_maximo - x_minimo);
+    const double proporcao_y = (centro_y - y_minimo) / (y_maximo - y_minimo);
+
+    x_minimo_visivel_ = centro_x - proporcao_x * nova_largura;
+    x_maximo_visivel_ = x_minimo_visivel_ + nova_largura;
+    y_minimo_visivel_ = centro_y - proporcao_y * nova_altura;
+    y_maximo_visivel_ = y_minimo_visivel_ + nova_altura;
+    zoom_personalizado_ = true;
+
+    update();
+    evento->accept();
+}
+
+void GraficoFuncao::mouseDoubleClickEvent(QMouseEvent* evento)
+{
+    if (evento->button() == Qt::LeftButton) {
+        redefinir_zoom();
+        update();
+        evento->accept();
+        return;
+    }
+
+    QWidget::mouseDoubleClickEvent(evento);
 }
 
 void GraficoFuncao::desenhar_grade(QPainter& pintor, const QRectF& area, double x_minimo, double x_maximo, double y_minimo, double y_maximo)
@@ -194,7 +291,7 @@ void GraficoFuncao::desenhar_curva(QPainter& pintor, const QRectF& area, double 
     for (int pixel = 0; pixel <= static_cast<int>(area.width()); ++pixel) {
         const double proporcao = area.width() <= 0.0 ? 0.0 : static_cast<double>(pixel) / area.width();
         const double x = x_minimo + proporcao * (x_maximo - x_minimo);
-        const double y = calcular_solucao_exata(valor_inicial_em_zero_, modelo_catalogado_.coeficiente_lambda, x);
+        const double y = modelo_catalogado_.funcao_exata(valor_inicial_em_zero_, x);
 
         if (!valor_finito(y) || y < y_minimo - (y_maximo - y_minimo) * 3.0 || y > y_maximo + (y_maximo - y_minimo) * 3.0) {
             segmento_ativo = false;

@@ -2,6 +2,8 @@
 
 #include "aproximacoes.hpp"
 
+#include <QMouseEvent>
+#include <QWheelEvent>
 #include <QWidget>
 
 class GraficoFuncao : public QWidget
@@ -14,10 +16,15 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* evento) override;
+    void wheelEvent(QWheelEvent* evento) override;
+    void mouseDoubleClickEvent(QMouseEvent* evento) override;
 
 private:
     QRectF area_do_grafico() const;
     QPointF mapear_para_tela(double x, double y, const QRectF& area, double x_minimo, double x_maximo, double y_minimo, double y_maximo) const;
+    double mapear_para_modelo_x(double x_tela, const QRectF& area, double x_minimo, double x_maximo) const;
+    void recalcular_limites_automaticos(double& x_minimo, double& x_maximo, double& y_minimo, double& y_maximo) const;
+    void redefinir_zoom();
     void desenhar_grade(QPainter& pintor, const QRectF& area, double x_minimo, double x_maximo, double y_minimo, double y_maximo);
     void desenhar_eixos(QPainter& pintor, const QRectF& area, double x_minimo, double x_maximo, double y_minimo, double y_maximo);
     void desenhar_curva(QPainter& pintor, const QRectF& area, double x_minimo, double x_maximo, double y_minimo, double y_maximo);
@@ -32,4 +39,9 @@ private:
     double tempo_final_ = 0.0;
     std::vector<TrajetoriaMetodo> trajetorias_;
     QString mensagem_;
+    bool zoom_personalizado_ = false;
+    double x_minimo_visivel_ = 0.0;
+    double x_maximo_visivel_ = 1.0;
+    double y_minimo_visivel_ = -1.0;
+    double y_maximo_visivel_ = 1.0;
 };
