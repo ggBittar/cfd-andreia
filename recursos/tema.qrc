@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icone_aplicacao.svg</file>
+        <file>tema_escuro.qss</file>
+    </qresource>
+</RCC>
