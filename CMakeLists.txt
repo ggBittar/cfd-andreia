@@ -33,6 +33,17 @@ target_link_libraries(avaliador_derivadas PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
 if(WIN32)
     set_target_properties(avaliador_derivadas PROPERTIES WIN32_EXECUTABLE TRUE)
     set_target_properties(avaliador_derivadas PROPERTIES
-        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/Release"
+        VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:avaliador_derivadas>"
     )
+
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${CMAKE_PREFIX_PATH}/bin")
+    if(WINDEPLOYQT_EXECUTABLE)
+        add_custom_command(TARGET avaliador_derivadas POST_BUILD
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+                --release
+                --no-compiler-runtime
+                "$<TARGET_FILE:avaliador_derivadas>"
+            COMMENT "Deploying Qt runtime dependencies"
+        )
+    endif()
 endif()
