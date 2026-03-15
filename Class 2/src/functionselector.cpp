@@ -37,7 +37,7 @@ FunctionSelector::FunctionSelector(QWidget *parent)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
 
-    QLabel *titleLabel = new QLabel("Selecione uma funcao implementada em C++, o dominio de x, o tempo final tf e os valores de N:", this);
+    QLabel *titleLabel = new QLabel("Selecione a formulação em função de Phi, o domínio de x, o tempo final tf e os valores de N:", this);
     titleLabel->setWordWrap(true);
     layout->addWidget(titleLabel);
 
@@ -68,7 +68,7 @@ FunctionSelector::FunctionSelector(QWidget *parent)
     layout->addWidget(nValuesInput_);
 
     QLabel *helpLabel = new QLabel(
-        "Exemplo atual: u(x, t, N) = somatorio de n = -N ate N de exp(-x - n*t). N aceita virgula, ponto e virgula ou espaco.",
+        "Formulação atual: u(x, t, N) = c - 2 nu Phi_x / Phi. N aceita vírgula, ponto e vírgula ou espaço.",
         this);
     helpLabel->setWordWrap(true);
     layout->addWidget(helpLabel);

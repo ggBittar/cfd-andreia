@@ -371,5 +371,5 @@ void GraphWidget::paintEvent(QPaintEvent *event)
 
     painter.setPen(QColor(214, 220, 230));
     painter.drawText(QRectF(plotRect.left(), 0, plotRect.width(), 18), Qt::AlignCenter,
-                     QString("%1   |   t = %2").arg(selectedFunction_.description).arg(currentTime(), 0, 'f', 3));
+                     QString("u(x,t,N) via Phi   |   t = %1").arg(currentTime(), 0, 'f', 3));
 }
