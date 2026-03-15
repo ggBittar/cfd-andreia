@@ -64,7 +64,7 @@ FunctionSelector::FunctionSelector(QWidget *parent)
 
     layout->addWidget(new QLabel("Vetor de N:", this));
     nValuesInput_->setPlaceholderText("Ex.: 1, 2, 4, 8");
-    nValuesInput_->setText("1, 2, 4, 8, 16, 32, 64");
+    nValuesInput_->setText("1, 2, 4, 8, 16, 32");
     layout->addWidget(nValuesInput_);
 
     QLabel *helpLabel = new QLabel(
