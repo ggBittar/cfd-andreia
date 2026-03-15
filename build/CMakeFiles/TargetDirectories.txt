@@ -1,5 +1,0 @@
-D:/Users/Directa/Documents/Projetos/pessoal/cfd-andreia/build/CMakeFiles/avaliador_derivadas.dir
-D:/Users/Directa/Documents/Projetos/pessoal/cfd-andreia/build/CMakeFiles/edit_cache.dir
-D:/Users/Directa/Documents/Projetos/pessoal/cfd-andreia/build/CMakeFiles/rebuild_cache.dir
-D:/Users/Directa/Documents/Projetos/pessoal/cfd-andreia/build/CMakeFiles/avaliador_derivadas_autogen_timestamp_deps.dir
-D:/Users/Directa/Documents/Projetos/pessoal/cfd-andreia/build/CMakeFiles/avaliador_derivadas_autogen.dir
