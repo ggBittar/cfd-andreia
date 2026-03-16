@@ -23,10 +23,9 @@ No Windows, os dois projetos foram preparados para uso com:
 
 Exemplo de caminhos usados neste repositório:
 
-- `C:/ProgramData/mingw64/mingw64/bin/g++.exe`
-- `C:/ProgramData/mingw64/mingw64/bin/gcc.exe`
-- `C:/ProgramData/mingw64/mingw64/bin/mingw32-make.exe`
 - `C:/Qt/6.10.2/mingw_64`
+- `C:/Qt/Tools/mingw1310_64/bin/gcc.exe`
+- `C:/Qt/Tools/mingw1310_64/bin/g++.exe`
 
 Se seus caminhos forem diferentes, ajuste os comandos abaixo.
 
@@ -35,33 +34,24 @@ Se seus caminhos forem diferentes, ajuste os comandos abaixo.
 ### 1. Configurar
 
 ```powershell
-cmake -S "Class 1" -B "Class 1/build-fresh" -G "MinGW Makefiles" `
-  -DCMAKE_MAKE_PROGRAM=C:/ProgramData/mingw64/mingw64/bin/mingw32-make.exe `
-  -DCMAKE_CXX_COMPILER=C:/ProgramData/mingw64/mingw64/bin/g++.exe `
-  -DCMAKE_C_COMPILER=C:/ProgramData/mingw64/mingw64/bin/gcc.exe `
-  -DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/mingw_64
-```
-
-Ou, para refazer a configuração do zero na mesma pasta de build:
-
-```powershell
-cmake --fresh -S "Class 1" -B "Class 1/build" -G "MinGW Makefiles" `
-  -DCMAKE_MAKE_PROGRAM=C:/ProgramData/mingw64/mingw64/bin/mingw32-make.exe `
-  -DCMAKE_CXX_COMPILER=C:/ProgramData/mingw64/mingw64/bin/g++.exe `
-  -DCMAKE_C_COMPILER=C:/ProgramData/mingw64/mingw64/bin/gcc.exe `
-  -DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/mingw_64
+cd "Class 1"
+cmake -S . -B build -G "MinGW Makefiles" `
+  -DCMAKE_PREFIX_PATH="C:/Qt/6.10.2/mingw_64" `
+  -DCMAKE_MAKE_PROGRAM="C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe" `
+  -DCMAKE_C_COMPILER="C:/Qt/Tools/mingw1310_64/bin/gcc.exe" `
+  -DCMAKE_CXX_COMPILER="C:/Qt/Tools/mingw1310_64/bin/g++.exe"
 ```
 
 ### 2. Compilar
 
 ```powershell
-cmake --build "Class 1/build-fresh"
+cmake --build build
 ```
 
 ### 3. Executar
 
 ```powershell
-& ".\Class 1\build-fresh\avaliador_derivadas.exe"
+& ".\build\avaliador_derivadas.exe"
 ```
 
 ### Observação
@@ -73,27 +63,18 @@ No `Class 1`, o `windeployqt` já está configurado como passo pós-build no `CM
 ### 1. Configurar
 
 ```powershell
-cmake -S "Class 2" -B "Class 2/build-fresh" -G "MinGW Makefiles" `
-  -DCMAKE_MAKE_PROGRAM=C:/ProgramData/mingw64/mingw64/bin/mingw32-make.exe `
-  -DCMAKE_CXX_COMPILER=C:/ProgramData/mingw64/mingw64/bin/g++.exe `
-  -DCMAKE_C_COMPILER=C:/ProgramData/mingw64/mingw64/bin/gcc.exe `
-  -DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/mingw_64
-```
-
-Ou, para refazer a configuração do zero na mesma pasta de build:
-
-```powershell
-cmake --fresh -S "Class 2" -B "Class 2/build" -G "MinGW Makefiles" `
-  -DCMAKE_MAKE_PROGRAM=C:/ProgramData/mingw64/mingw64/bin/mingw32-make.exe `
-  -DCMAKE_CXX_COMPILER=C:/ProgramData/mingw64/mingw64/bin/g++.exe `
-  -DCMAKE_C_COMPILER=C:/ProgramData/mingw64/mingw64/bin/gcc.exe `
-  -DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/mingw_64
+cd "Class 2"
+cmake -S . -B build -G "MinGW Makefiles" `
+  -DCMAKE_PREFIX_PATH="C:/Qt/6.10.2/mingw_64" `
+  -DCMAKE_MAKE_PROGRAM="C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe" `
+  -DCMAKE_C_COMPILER="C:/Qt/Tools/mingw1310_64/bin/gcc.exe" `
+  -DCMAKE_CXX_COMPILER="C:/Qt/Tools/mingw1310_64/bin/g++.exe"
 ```
 
 ### 2. Compilar
 
 ```powershell
-cmake --build "Class 2/build-fresh"
+cmake --build build
 ```
 
 ### 3. Copiar as DLLs do Qt
@@ -101,7 +82,7 @@ cmake --build "Class 2/build-fresh"
 O `Class 2` possui um alvo separado para deploy das dependências do Qt:
 
 ```powershell
-cmake --build "Class 2/build-fresh" --target deploy_qt
+cmake --build build --target deploy_qt
 ```
 
 Como a primeira aba usa `QWebEngineView` para renderizar fórmulas com MathJax, o kit Qt usado no `Class 2` precisa incluir `WebEngineWidgets`.
@@ -111,7 +92,7 @@ Se `WebEngineWidgets` não estiver instalado, o projeto ainda compila e a primei
 ### 4. Executar
 
 ```powershell
-& ".\Class 2\build-fresh\Class2App.exe"
+& ".\build\Class2App.exe"
 ```
 
 ## Estrutura do repositório
@@ -167,18 +148,10 @@ O `Class 2 - versao 2` foi estruturado para compilar o modulo `src/class2_v2_app
 Rode o deploy das DLLs no `Class 2`:
 
 ```powershell
-cmake --build "Class 2/build-fresh" --target deploy_qt
+cmake --build build --target deploy_qt
 ```
 
 No `Class 1`, esse passo já é automático no pós-build.
-
-### Erro de configure com `no such file or directory`
-
-Verifique se `mingw32-make.exe` aponta para o caminho real do MinGW. Neste ambiente, o caminho correto é:
-
-```text
-C:/ProgramData/mingw64/mingw64/bin/mingw32-make.exe
-```
 
 ### Erro ao encontrar Qt
 
@@ -188,10 +161,19 @@ Confirme que `CMAKE_PREFIX_PATH` aponta para o kit MinGW do Qt:
 C:/Qt/6.10.2/mingw_64
 ```
 
+### Erro ao encontrar compiladores MinGW
+
+Confirme que os compiladores apontam para:
+
+```text
+C:/Qt/Tools/mingw1310_64/bin/gcc.exe
+C:/Qt/Tools/mingw1310_64/bin/g++.exe
+```
+
 ### Quando o diretório `build` antigo estiver inconsistente
 
-Prefira gerar em uma pasta nova como `build-fresh`, em vez de reaproveitar um build antigo:
+Apague ou recrie a pasta `build` dentro do projeto e configure novamente:
 
 ```powershell
-cmake -S "Class 2" -B "Class 2/build-fresh" ...
+cmake -S . -B build ...
 ```
