@@ -1,9 +1,10 @@
 # CFD Classes
 
-Este repositório contém dois projetos Qt/C++ independentes:
+Este repositório contem tres projetos independentes:
 
 - `Class 1`: aplicação para comparar aproximações numéricas de derivadas
 - `Class 2`: aplicação com seleção de funções e visualização gráfica com controle de tempo
+- `Class 2 - versao 2`: reproducao do `Class 2` em `PyQt6`, com backend numerico em `Cython`
 
 As instruções abaixo assumem que você está na raiz do repositório:
 
@@ -125,8 +126,39 @@ cfd-andreia/
 |   |-- CMakeLists.txt
 |   |-- src/
 |   `-- recursos/
+|-- Class 2 - versao 2/
+|   |-- pyproject.toml
+|   |-- setup.py
+|   `-- src/
 `-- README.md
 ```
+
+## Build e execucao do Class 2 - versao 2
+
+### 1. Instalar as dependencias
+
+Em um ambiente Python com `pip`:
+
+```powershell
+cd "Class 2 - versao 2"
+python -m pip install -e .
+```
+
+### 2. Executar
+
+```powershell
+class2-versao-2-app
+```
+
+Ou:
+
+```powershell
+python -m class2_v2_app
+```
+
+### Observacao
+
+O `Class 2 - versao 2` foi estruturado para compilar o modulo `src/class2_v2_app/_burgers.pyx` com `Cython`. Se a extensao compilada ainda nao estiver disponivel, a aplicacao cai automaticamente para um backend em Python puro com a mesma formulacao.
 
 ## Dicas de troubleshooting
 

@@ -63,3 +63,10 @@ mocs_compilation.o
 .idea/
 .vscode/
 
+# Python and Cython artifacts
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+.pytest_cache/
+
