@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "Cython>=3.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "class4-pyqt"
+version = "0.1.0"
+description = "Class 4 em PyQt6 para volumes finitos 1D da equacao do calor."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.6",
+]
+
+[project.optional-dependencies]
+webengine = [
+    "PyQt6-WebEngine>=6.6",
+]
+
+[project.scripts]
+class4-app = "class4_app.main:run"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
