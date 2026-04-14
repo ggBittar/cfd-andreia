@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from pathlib import Path
+from PyQt6.QtCore import QUrl
+
 try:
     from . import _burgers as burgers_backend
     BACKEND_NAME = "Cython"
@@ -203,6 +206,8 @@ def formulations_html() -> str:
 
 
 def formulations_mathjax_html() -> str:
+    mathjax_path = Path(__file__).resolve().parents[2] / "node_modules" / "mathjax" / "tex-svg.js"
+    mathjax_url = QUrl.fromLocalFile(str(mathjax_path)).toString()
     return f"""
     <html>
       <head>
@@ -216,7 +221,7 @@ def formulations_mathjax_html() -> str:
             svg: {{ fontCache: 'global' }}
           }};
         </script>
-        <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+        <script src="{mathjax_url}"></script>
         <style>
           body {{
             font-family: "Segoe UI", sans-serif;

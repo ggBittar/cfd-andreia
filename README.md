@@ -1,10 +1,11 @@
 # CFD Classes
 
-Este repositório contem tres projetos independentes:
+Este repositório contem quatro projetos independentes:
 
 - `Class 1`: aplicação para comparar aproximações numéricas de derivadas
 - `Class 2`: aplicação com seleção de funções e visualização gráfica com controle de tempo
 - `Class 2 - versao 2`: reproducao do `Class 2` em `PyQt6`, com backend numerico em `Cython`
+- `Class 3`: aplicação em `PyQt6` para comparar discretizações em tempo e em espaco da equação de Burgers
 
 As instruções abaixo assumem que você está na raiz do repositório:
 
@@ -111,6 +112,11 @@ cfd-andreia/
 |   |-- pyproject.toml
 |   |-- setup.py
 |   `-- src/
+|-- Class 3/
+|   |-- pyproject.toml
+|   |-- README.md
+|   |-- setup.py
+|   `-- src/
 `-- README.md
 ```
 
@@ -140,6 +146,33 @@ python -m class2_v2_app
 ### Observacao
 
 O `Class 2 - versao 2` foi estruturado para compilar o modulo `src/class2_v2_app/_burgers.pyx` com `Cython`. Se a extensao compilada ainda nao estiver disponivel, a aplicacao cai automaticamente para um backend em Python puro com a mesma formulacao.
+
+## Build e execucao do Class 3
+
+### 1. Instalar as dependencias
+
+Em um ambiente Python com `pip`:
+
+```powershell
+cd "Class 3"
+python -m pip install -e .
+```
+
+### 2. Executar
+
+```powershell
+class3-app
+```
+
+Ou:
+
+```powershell
+python -m class3_app
+```
+
+### Observacao
+
+O `Class 3` usa a solucao exata de Burgers baseada em `Phi` como referencia e a compara com esquemas espaco-temporais em malhas definidas pelos vetores `Nx` e `Nt`.
 
 ## Dicas de troubleshooting
 
