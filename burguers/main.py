@@ -37,10 +37,10 @@ NU = 0.07
 T_FINAL = 1.0
 
 # Refinamentos para o estudo de convergência GPU
-REFINAMENTOS = [32, 64, 128, 256, 512, 1024]
+REFINAMENTOS = [32, 64, 128, 256, 512, 1024, 2048, 4096]
 
 # Malha grosseira usada na comparação CPU x GPU
-NX_CPU_COMPARACAO = 4096
+NX_CPU_COMPARACAO = 1024
 
 # Truncamento da série da solução analítica
 N_TERMS = 80
