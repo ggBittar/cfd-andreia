@@ -1,282 +1,292 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.sparse import lil_matrix, csc_matrix
+from scipy.sparse import lil_matrix, csr_matrix
 from scipy.sparse.linalg import spsolve
+import os
 
-# ==========================================================
-# DADOS DO PROBLEMA
-# ==========================================================
-Lx = 0.02         # comprimento em x [m]
-Ly = 0.01         # espessura/altura em y [m]
+# ============================================================
+# 1) DADOS DO PROBLEMA
+# ============================================================
+# Dados do enunciado:
+# largura da chapa: L = 0.02 m
+# espessura/altura da chapa: e = 0.01 m
+# temperatura inicial: 30 °C
+# temperatura ambiente: 30 °C
+# coeficiente convectivo: h = 20 W/m²K
+# fluxo de calor imposto em duas regiões da base: q'' = 5e4 W/m²
+# condutividade térmica: k = 14.9 W/mK
+# difusividade térmica: alpha = 3.95e-6 m²/s
+# tempo final: 60 s
 
-k = 14.9          # condutividade térmica [W/m.K]
-alpha = 3.95e-6   # difusividade térmica [m²/s]
-h = 20.0          # coeficiente de convecção [W/m².K]
-T_inf = 30.0      # temperatura ambiente [°C]
-T0 = 30.0         # temperatura inicial [°C]
-q_flux = 5e4      # fluxo de calor imposto [W/m²]
+L = 0.02
+H = 0.01
+T_inf = 30.0
+T0 = 30.0
+h = 20.0
+q_flux = 5.0e4
+k = 14.9
+alpha = 3.95e-6
+t_final = 60.0
 
-t_final = 60.0    # tempo final [s]
-dt = 0.2          # passo de tempo [s]
+# A partir de alpha = k/(rho*cp), obtemos rho*cp
+rho_cp = k / alpha
 
-# ==========================================================
-# PROPRIEDADES COMPLEMENTARES
-# alpha = k / (rho*cp) => rho*cp = k/alpha
-# ==========================================================
-rho_cp = k / alpha  # [J/m³.K]
 
-# Espessura unitária na direção perpendicular ao plano
-# (problema 2D por unidade de profundidade)
-z = 1.0
+# ============================================================
+# 2) MALHA NUMÉRICA
+# ============================================================
+# Você pode refinar se quiser.
+Nx = 20
+Ny = 10
 
-# ==========================================================
-# MALHA
-# Escolha de malha contendo exatamente:
-# x = 0.01
-# y = 0.00, 0.005, 0.01
-# ==========================================================
-Nx = 41
-Ny = 21
+dx = L / Nx
+dy = H / Ny
 
-dx = Lx / Nx
-dy = Ly / Ny
+# Coordenadas dos centros dos volumes
+x_centers = (np.arange(Nx) + 0.5) * dx
+y_centers = (np.arange(Ny) + 0.5) * dy
 
-# centros dos volumes
-x = np.linspace(dx/2, Lx - dx/2, Nx)
-y = np.linspace(dy/2, Ly - dy/2, Ny)
-
-# tempo
+# Passo de tempo
+dt = 0.1
 nt = int(t_final / dt)
 
-# ==========================================================
-# REGIÕES COM FLUXO DE CALOR NA FACE SUPERIOR (y = 0)
-# 0.003 <= x <= 0.008
-# 0.012 <= x <= 0.017
-# ==========================================================
-def top_boundary_flux(xc):
-    if (0.003 <= xc <= 0.008) or (0.012 <= xc <= 0.017):
-        return q_flux
-    return None  # restante da borda superior sofre convecção
+# Profundidade unitária da chapa (modelo 2D por unidade de profundidade)
+depth = 1.0
 
-# ==========================================================
-# INDEXAÇÃO 2D -> 1D
-# ==========================================================
+# Áreas das faces
+Ae = Aw = dy * depth
+An = As = dx * depth
+
+# Volume de um volume interno
+V = dx * dy * depth
+
+# Termo transiente
+aP0 = rho_cp * V / dt
+
+
+# ============================================================
+# 3) FUNÇÕES AUXILIARES
+# ============================================================
 def idx(i, j):
+    """
+    Converte o índice 2D (i, j) em índice 1D para montar a matriz.
+    i -> direção x
+    j -> direção y
+    """
     return j * Nx + i
 
-N = Nx * Ny
 
-# ==========================================================
-# INICIALIZAÇÃO DO CAMPO
-# ==========================================================
-T = np.full((Ny, Nx), T0)
+def is_heat_flux_region(x):
+    """
+    Retorna True se a posição x estiver em uma das regiões da base
+    onde o fluxo de calor é imposto.
+    Regiões:
+      0.003 <= x <= 0.008
+      0.012 <= x <= 0.017
+    """
+    return (0.003 <= x <= 0.008) or (0.012 <= x <= 0.017)
 
-# ==========================================================
-# PONTOS DE MONITORAMENTO PEDIDOS
-# T(x=0.01,y=0,t), T(x=0.01,y=0.005,t), T(x=0.01,y=0.01,t)
+
+def convection_conductance_half_cell(k, h, delta, area):
+    """
+    Condutância equivalente entre o centro do volume e o ambiente
+    para uma fronteira convectiva usando MEIO VOLUME.
+
+    Resistência total = condução (meia célula) + convecção
+                      = (delta/2)/(k*A) + 1/(h*A)
+
+    Logo:
+      G = 1 / R_total
+        = A / ((delta/(2*k)) + (1/h))
+    """
+    return area / (delta / (2.0 * k) + 1.0 / h)
+
+
+# ============================================================
+# 4) CONDIÇÃO INICIAL
+# ============================================================
+T = np.full((Ny, Nx), T0, dtype=float)
+
+# Vamos armazenar histórico nas três posições pedidas:
+# T(x = 0.01, y = 0, t)
+# T(x = 0.01, y = 0.005, t)
+# T(x = 0.01, y = 0.01, t)
 #
-# Como o método usa centros de volume, pegamos o centro mais próximo.
-# ==========================================================
-def nearest_index(arr, value):
-    return np.argmin(np.abs(arr - value))
+# Como trabalhamos com centros dos volumes, usamos o centro mais próximo.
 
-ix = nearest_index(x, 0.01)
-jy_top = nearest_index(y, 0.0)
-jy_mid = nearest_index(y, 0.005)
-jy_bot = nearest_index(y, 0.01)
+def nearest_i(x_target):
+    return np.argmin(np.abs(x_centers - x_target))
 
-time_hist = [0.0]
-T_top_hist = [T[jy_top, ix]]
-T_mid_hist = [T[jy_mid, ix]]
-T_bot_hist = [T[jy_bot, ix]]
+def nearest_j(y_target):
+    return np.argmin(np.abs(y_centers - y_target))
 
-# ==========================================================
-# FUNÇÃO PARA MONTAR O SISTEMA LINEAR A*T_new = b
-# COM COEFICIENTES CLÁSSICOS DE VOLUMES FINITOS
-# ==========================================================
-def assemble_system(T_old):
-    A = lil_matrix((N, N))
-    b = np.zeros(N)
+i_probe = nearest_i(0.01)
+j_probe_bottom = nearest_j(0.0)
+j_probe_mid = nearest_j(0.005)
+j_probe_top = nearest_j(0.01)
 
-    # áreas das faces
-    Ae = Aw = dy * z
-    An = As = dx * z
+time_history = []
+T_bottom_history = []
+T_mid_history = []
+T_top_history = []
 
-    # volume do controle
-    V = dx * dy * z
 
-    # termo transiente implícito
-    aP0 = rho_cp * V / dt
+# ============================================================
+# 5) MONTAGEM DA MATRIZ DO SISTEMA IMPLÍCITO
+# ============================================================
+def build_system(T_old):
+    """
+    Monta o sistema linear A*T_new = b do passo de tempo atual.
+
+    T_old: campo de temperatura no tempo n
+    retorna:
+      A: matriz esparsa
+      b: vetor do lado direito
+    """
+    N = Nx * Ny
+    A = lil_matrix((N, N), dtype=float)
+    b = np.zeros(N, dtype=float)
 
     for j in range(Ny):
         for i in range(Nx):
             p = idx(i, j)
 
-            # coeficientes de difusão padrão
-            aE = 0.0
-            aW = 0.0
-            aN = 0.0
-            aS = 0.0
+            # Começamos com o termo transiente
+            aP = aP0
+            rhs = aP0 * T_old[j, i]
 
-            Su = 0.0
-            Sp = 0.0
-
-            # ----------------------------------------------
-            # LESTE
-            # ----------------------------------------------
+            # ====================================================
+            # CONTRIBUIÇÃO LESTE
+            # ====================================================
             if i < Nx - 1:
+                # vizinho interno a leste
                 aE = k * Ae / dx
-            else:
-                # borda direita: convecção
-                # tratamento por meia distância:
-                # q = (T_P - T_inf) / [ (dx/2)/k + 1/h ]
-                # equivalente a termo fonte linearizado
-                R_cond = (dx / 2) / (k * Ae)
-                R_conv = 1 / (h * Ae)
-                U = 1 / (R_cond + R_conv)
-                Sp -= U
-                Su += U * T_inf
-
-            # ----------------------------------------------
-            # OESTE
-            # ----------------------------------------------
-            if i > 0:
-                aW = k * Aw / dx
-            else:
-                # borda esquerda: convecção
-                R_cond = (dx / 2) / (k * Aw)
-                R_conv = 1 / (h * Aw)
-                U = 1 / (R_cond + R_conv)
-                Sp -= U
-                Su += U * T_inf
-
-            # ----------------------------------------------
-            # NORTE
-            # Aqui j=0 é a borda superior do desenho/enunciado
-            # ----------------------------------------------
-            if j > 0:
-                aN = k * An / dy
-            else:
-                qtop = top_boundary_flux(x[i])
-
-                if qtop is not None:
-                    # fluxo imposto na face superior
-                    # entra como fonte no volume:
-                    # Su += q'' * A_face
-                    Su += qtop * An
-                else:
-                    # convecção na parte restante da face superior
-                    R_cond = (dy / 2) / (k * An)
-                    R_conv = 1 / (h * An)
-                    U = 1 / (R_cond + R_conv)
-                    Sp -= U
-                    Su += U * T_inf
-
-            # ----------------------------------------------
-            # SUL
-            # ----------------------------------------------
-            if j < Ny - 1:
-                aS = k * As / dy
-            else:
-                # borda inferior: convecção
-                R_cond = (dy / 2) / (k * As)
-                R_conv = 1 / (h * As)
-                U = 1 / (R_cond + R_conv)
-                Sp -= U
-                Su += U * T_inf
-
-            # ----------------------------------------------
-            # COEFICIENTE CENTRAL
-            # aP = aE + aW + aN + aS + aP0 - Sp
-            # ----------------------------------------------
-            aP = aE + aW + aN + aS + aP0 - Sp
-
-            A[p, p] = aP
-
-            if i < Nx - 1:
                 A[p, idx(i + 1, j)] = -aE
+                aP += aE
+            else:
+                # fronteira leste com convecção
+                G_e = convection_conductance_half_cell(k, h, dx, Ae)
+                aP += G_e
+                rhs += G_e * T_inf
+
+            # ====================================================
+            # CONTRIBUIÇÃO OESTE
+            # ====================================================
             if i > 0:
+                # vizinho interno a oeste
+                aW = k * Aw / dx
                 A[p, idx(i - 1, j)] = -aW
-            if j > 0:
-                A[p, idx(i, j - 1)] = -aN
+                aP += aW
+            else:
+                # fronteira oeste com convecção
+                G_w = convection_conductance_half_cell(k, h, dx, Aw)
+                aP += G_w
+                rhs += G_w * T_inf
+
+            # ====================================================
+            # CONTRIBUIÇÃO NORTE
+            # ====================================================
             if j < Ny - 1:
-                A[p, idx(i, j + 1)] = -aS
+                # vizinho interno ao norte
+                aN = k * An / dy
+                A[p, idx(i, j + 1)] = -aN
+                aP += aN
+            else:
+                # fronteira superior com convecção
+                G_n = convection_conductance_half_cell(k, h, dy, An)
+                aP += G_n
+                rhs += G_n * T_inf
 
-            b[p] = aP0 * T_old[j, i] + Su
+            # ====================================================
+            # CONTRIBUIÇÃO SUL
+            # ====================================================
+            if j > 0:
+                # vizinho interno ao sul
+                aS = k * As / dy
+                A[p, idx(i, j - 1)] = -aS
+                aP += aS
+            else:
+                # fronteira inferior y = 0
+                # Nesta borda, parte recebe fluxo imposto e parte convecção.
+                xP = x_centers[i]
 
-    return csc_matrix(A), b
+                if is_heat_flux_region(xP):
+                    # fluxo de calor entrando na chapa
+                    # entra diretamente como fonte no vetor rhs
+                    rhs += q_flux * As
+                else:
+                    # região sem fluxo imposto -> convecção
+                    G_s = convection_conductance_half_cell(k, h, dy, As)
+                    aP += G_s
+                    rhs += G_s * T_inf
 
-# ==========================================================
-# SOLUÇÃO TRANSIENTE
-# ==========================================================
-snapshot_times = [1, 5, 10, 30, 60]
-snapshots = {}
+            # coeficiente central
+            A[p, p] = aP
+            b[p] = rhs
 
-for n in range(1, nt + 1):
+    return csr_matrix(A), b
+
+
+# ============================================================
+# 6) MARCHA NO TEMPO
+# ============================================================
+for n in range(nt + 1):
     t = n * dt
 
-    A, b = assemble_system(T)
-    T_vec = spsolve(A, b)
-    T = T_vec.reshape((Ny, Nx))
+    # Armazena histórico antes do próximo passo
+    time_history.append(t)
+    T_bottom_history.append(T[j_probe_bottom, i_probe])
+    T_mid_history.append(T[j_probe_mid, i_probe])
+    T_top_history.append(T[j_probe_top, i_probe])
 
-    time_hist.append(t)
-    T_top_hist.append(T[jy_top, ix])
-    T_mid_hist.append(T[jy_mid, ix])
-    T_bot_hist.append(T[jy_bot, ix])
+    # Último instante não precisa avançar
+    if n == nt:
+        break
 
-    for ts in snapshot_times:
-        if abs(t - ts) < dt / 2:
-            snapshots[ts] = T.copy()
+    # Monta e resolve sistema
+    A, b = build_system(T)
+    T_new_flat = spsolve(A, b)
 
-# ==========================================================
-# RESULTADOS NUMÉRICOS
-# ==========================================================
-print("Temperaturas finais aproximadas:")
-print(f"T(x=0.01, y=0.00, t=60s)  ≈ {T[jy_top, ix]:.4f} °C")
-print(f"T(x=0.01, y=0.005, t=60s) ≈ {T[jy_mid, ix]:.4f} °C")
-print(f"T(x=0.01, y=0.01, t=60s)  ≈ {T[jy_bot, ix]:.4f} °C")
+    # Converte de volta para matriz 2D
+    T = T_new_flat.reshape((Ny, Nx))
 
-# ==========================================================
-# GRÁFICO T x t
-# ==========================================================
-plt.figure(figsize=(8, 5))
-plt.plot(time_hist, T_top_hist, label='T(x=0.01, y=0.00, t)')
-plt.plot(time_hist, T_mid_hist, label='T(x=0.01, y=0.005, t)')
-plt.plot(time_hist, T_bot_hist, label='T(x=0.01, y=0.01, t)')
-plt.xlabel('Tempo [s]')
-plt.ylabel('Temperatura [°C]')
-plt.title('Evolução temporal da temperatura')
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
+# ============================================================
+# 7) SALVAR GRÁFICOS EM UMA PASTA
+# ============================================================
+import os
 
-# ==========================================================
-# CAMPO FINAL DE TEMPERATURA
-# ==========================================================
-X, Y = np.meshgrid(x, y)
+# cria a pasta "graficos" se ela não existir
+os.makedirs("graficos", exist_ok=True)
 
+X, Y = np.meshgrid(x_centers, y_centers)
+
+# ----------------------------
+# gráfico do campo de temperatura final
+# ----------------------------
 plt.figure(figsize=(8, 4))
-cont = plt.contourf(X, Y, T, levels=30)
-plt.colorbar(cont, label='Temperatura [°C]')
-plt.xlabel('x [m]')
-plt.ylabel('y [m]')
-plt.title('Distribuição de temperatura em t = 60 s')
-plt.gca().invert_yaxis()
+cp = plt.contourf(X, Y, T, levels=20)
+plt.colorbar(cp, label='Temperatura (°C)')
+plt.xlabel('x (m)')
+plt.ylabel('y (m)')
+plt.title(f'Distribuição de temperatura em t = {t_final:.1f} s')
 plt.tight_layout()
-plt.show()
+plt.savefig("graficos/temperatura_final.png", dpi=300, bbox_inches="tight")
+plt.close()
 
-# ==========================================================
-# SNAPSHOTS OPCIONAIS
-# ==========================================================
-for ts in snapshot_times:
-    if ts in snapshots:
-        plt.figure(figsize=(8, 4))
-        cont = plt.contourf(X, Y, snapshots[ts], levels=30)
-        plt.colorbar(cont, label='Temperatura [°C]')
-        plt.xlabel('x [m]')
-        plt.ylabel('y [m]')
-        plt.title(f'Distribuição de temperatura em t = {ts} s')
-        plt.gca().invert_yaxis()
-        plt.tight_layout()
-        plt.show()
+# ----------------------------
+# gráfico do histórico de temperatura
+# ----------------------------
+plt.figure(figsize=(8, 5))
+plt.plot(time_history, T_bottom_history, label='T(x=0.01, y=0, t)')
+plt.plot(time_history, T_mid_history, label='T(x=0.01, y=0.005, t)')
+plt.plot(time_history, T_top_history, label='T(x=0.01, y=0.01, t)')
+plt.xlabel('Tempo (s)')
+plt.ylabel('Temperatura (°C)')
+plt.title('Histórico de temperatura')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("graficos/historico_temperatura.png", dpi=300, bbox_inches="tight")
+plt.close()
+
+print("Gráficos salvos na pasta 'graficos'")
