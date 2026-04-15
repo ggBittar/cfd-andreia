@@ -36,8 +36,8 @@ rho_cp = k / alpha
 # 2) MALHA NUMÉRICA
 # ============================================================
 # Você pode refinar se quiser.
-Nx = 20
-Ny = 10
+Nx = 41
+Ny = 21
 
 dx = L / Nx
 dy = H / Ny
@@ -129,6 +129,17 @@ time_history = []
 T_bottom_history = []
 T_mid_history = []
 T_top_history = []
+
+# ------------------------------------------------------------
+# Configuração para salvar mapas do campo de temperatura
+# em vários instantes de tempo.
+#
+# Exemplo: se save_field_interval = 12.0, o código salvará
+# mapas em t = 0, 12, 24, 36, 48 e 60 s.
+# ------------------------------------------------------------
+save_field_interval = 12.0
+snapshot_times = np.arange(0.0, t_final + 0.5 * save_field_interval, save_field_interval)
+snapshots = {}
 
 
 # ============================================================
@@ -239,6 +250,17 @@ for n in range(nt + 1):
     T_mid_history.append(T[j_probe_mid, i_probe])
     T_top_history.append(T[j_probe_top, i_probe])
 
+    # --------------------------------------------------------
+    # Se o tempo atual estiver próximo de um dos instantes de
+    # salvamento, guarda uma cópia do campo de temperatura.
+    #
+    # Usamos uma tolerância de dt/2 para evitar problemas de
+    # arredondamento numérico na comparação entre tempos.
+    # --------------------------------------------------------
+    for ts in snapshot_times:
+        if abs(t - ts) <= 0.5 * dt and ts not in snapshots:
+            snapshots[float(ts)] = T.copy()
+
     # Último instante não precisa avançar
     if n == nt:
         break
@@ -250,13 +272,74 @@ for n in range(nt + 1):
     # Converte de volta para matriz 2D
     T = T_new_flat.reshape((Ny, Nx))
 
-# ============================================================
-# 7) SALVAR GRÁFICOS EM UMA PASTA
-# ============================================================
-import os
 
-# cria a pasta "graficos" se ela não existir
+# ============================================================
+# 7) VISUALIZAÇÃO DA MALHA DE VOLUMES FINITOS
+# ============================================================
+# Nesta etapa vamos gerar uma figura apenas da malha numérica.
+# A ideia é enxergar:
+#   1) as linhas que delimitam cada volume de controle
+#   2) os centros dos volumes, onde a temperatura T(i,j) é armazenada
+#   3) as duas regiões da base que recebem fluxo de calor imposto
+#
+# Isso ajuda bastante a entender o método dos volumes finitos,
+# porque a variável não fica armazenada no nó da grade, e sim no
+# CENTRO de cada volume.
+
+# Coordenadas das linhas da malha (fronteiras dos volumes)
+x_faces = np.linspace(0.0, L, Nx + 1)
+y_faces = np.linspace(0.0, H, Ny + 1)
+
+# Cria a pasta "graficos" se ela não existir
 os.makedirs("graficos", exist_ok=True)
+
+# ----------------------------
+# gráfico da malha numérica
+# ----------------------------
+plt.figure(figsize=(10, 5))
+
+# Desenha as linhas verticais da malha
+for xf in x_faces:
+    plt.plot([xf, xf], [0.0, H], color='black', linewidth=0.8)
+
+# Desenha as linhas horizontais da malha
+for yf in y_faces:
+    plt.plot([0.0, L], [yf, yf], color='black', linewidth=0.8)
+
+# Desenha os centros dos volumes de controle
+Xc, Yc = np.meshgrid(x_centers, y_centers)
+plt.scatter(Xc, Yc, s=18, marker='o', label='Centros dos volumes')
+
+# Marca as duas regiões da base com fluxo imposto
+# Região 1: 0.003 <= x <= 0.008, em y = 0
+# Região 2: 0.012 <= x <= 0.017, em y = 0
+plt.plot([0.003, 0.008], [0.0, 0.0], linewidth=5, solid_capstyle='butt',
+         label='Fluxo de calor imposto')
+plt.plot([0.012, 0.017], [0.0, 0.0], linewidth=5, solid_capstyle='butt')
+
+# Destaca os três pontos de acompanhamento de temperatura
+plt.scatter([x_centers[i_probe]], [y_centers[j_probe_bottom]], s=70, marker='s',
+            label='Ponto próximo de (0.01, 0)')
+plt.scatter([x_centers[i_probe]], [y_centers[j_probe_mid]], s=70, marker='^',
+            label='Ponto próximo de (0.01, 0.005)')
+plt.scatter([x_centers[i_probe]], [y_centers[j_probe_top]], s=70, marker='D',
+            label='Ponto próximo de (0.01, 0.01)')
+
+plt.xlabel('x (m)')
+plt.ylabel('y (m)')
+plt.title('Malha de volumes finitos e centros dos elementos')
+plt.xlim(0.0, L)
+plt.ylim(0.0, H)
+plt.gca().set_aspect('equal')
+plt.grid(False)
+plt.legend(loc='upper right', fontsize=8)
+plt.tight_layout()
+plt.savefig("graficos/malha_volumes_finitos.png", dpi=300, bbox_inches="tight")
+plt.close()
+
+# ============================================================
+# 8) SALVAR GRÁFICOS EM UMA PASTA
+# ============================================================
 
 X, Y = np.meshgrid(x_centers, y_centers)
 
@@ -272,6 +355,24 @@ plt.title(f'Distribuição de temperatura em t = {t_final:.1f} s')
 plt.tight_layout()
 plt.savefig("graficos/temperatura_final.png", dpi=300, bbox_inches="tight")
 plt.close()
+
+# ----------------------------
+# gráficos do campo de temperatura em vários instantes
+# ----------------------------
+# Cada snapshot salvo durante a simulação gera uma figura
+# própria. O nome do arquivo inclui o tempo correspondente.
+for ts in sorted(snapshots.keys()):
+    T_snap = snapshots[ts]
+
+    plt.figure(figsize=(8, 4))
+    cp = plt.contourf(X, Y, T_snap, levels=20)
+    plt.colorbar(cp, label='Temperatura (°C)')
+    plt.xlabel('x (m)')
+    plt.ylabel('y (m)')
+    plt.title(f'Distribuição de temperatura em t = {ts:.1f} s')
+    plt.tight_layout()
+    plt.savefig(f"graficos/temperatura_t_{ts:05.1f}s.png", dpi=300, bbox_inches="tight")
+    plt.close()
 
 # ----------------------------
 # gráfico do histórico de temperatura
