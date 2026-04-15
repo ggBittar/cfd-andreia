@@ -37,10 +37,10 @@ NU = 0.07
 T_FINAL = 1.0
 
 # Refinamentos para o estudo de convergência GPU
-REFINAMENTOS = [64, 128, 256, 512]
+REFINAMENTOS = [32, 64, 128, 256, 512, 1024]
 
 # Malha grosseira usada na comparação CPU x GPU
-NX_CPU_COMPARACAO = 64
+NX_CPU_COMPARACAO = 4096
 
 # Truncamento da série da solução analítica
 N_TERMS = 80
@@ -163,34 +163,59 @@ def passo_cpu_central(u_old, dx, dt, nu=NU):
 # ============================================================
 # 5) PASSOS NUMÉRICOS EM GPU (CuPy)
 # ============================================================
-def passo_gpu_upwind(u_old, dx, dt, nu=NU):
-    """
-    Passo explícito em GPU com upwind no termo convectivo.
-    Usa cp.roll para impor contorno periódico.
-    """
-    u_im1 = cp.roll(u_old, 1)
-    u_ip1 = cp.roll(u_old, -1)
+# Os kernels abaixo fundem o stencil completo em um único launch,
+# evitando vários kernels pequenos gerados por cp.roll/cp.where
+# a cada passo de tempo.
+KERNEL_UPWIND = cp.ElementwiseKernel(
+    "raw float64 u_old, float64 dx, float64 dt, float64 nu, int32 n",
+    "float64 u_new",
+    r"""
+    const int im1 = (i == 0) ? (n - 1) : (i - 1);
+    const int ip1 = (i == n - 1) ? 0 : (i + 1);
 
-    dudx = cp.where(
-        u_old >= 0.0,
-        (u_old - u_im1) / dx,
-        (u_ip1 - u_old) / dx,
-    )
+    const double ui = u_old[i];
+    const double uim1 = u_old[im1];
+    const double uip1 = u_old[ip1];
 
-    d2udx2 = (u_ip1 - 2.0 * u_old + u_im1) / (dx * dx)
-    return u_old - dt * u_old * dudx + dt * nu * d2udx2
+    double dudx;
+    if (ui >= 0.0) {
+        dudx = (ui - uim1) / dx;
+    } else {
+        dudx = (uip1 - ui) / dx;
+    }
+
+    const double d2udx2 = (uip1 - 2.0 * ui + uim1) / (dx * dx);
+    u_new = ui - dt * ui * dudx + dt * nu * d2udx2;
+    """,
+    "burgers_upwind_kernel",
+)
 
 
-def passo_gpu_central(u_old, dx, dt, nu=NU):
-    """
-    Passo explícito em GPU com diferença central no termo convectivo.
-    """
-    u_im1 = cp.roll(u_old, 1)
-    u_ip1 = cp.roll(u_old, -1)
+KERNEL_CENTRAL = cp.ElementwiseKernel(
+    "raw float64 u_old, float64 dx, float64 dt, float64 nu, int32 n",
+    "float64 u_new",
+    r"""
+    const int im1 = (i == 0) ? (n - 1) : (i - 1);
+    const int ip1 = (i == n - 1) ? 0 : (i + 1);
 
-    dudx = (u_ip1 - u_im1) / (2.0 * dx)
-    d2udx2 = (u_ip1 - 2.0 * u_old + u_im1) / (dx * dx)
-    return u_old - dt * u_old * dudx + dt * nu * d2udx2
+    const double ui = u_old[i];
+    const double uim1 = u_old[im1];
+    const double uip1 = u_old[ip1];
+
+    const double dudx = (uip1 - uim1) / (2.0 * dx);
+    const double d2udx2 = (uip1 - 2.0 * ui + uim1) / (dx * dx);
+    u_new = ui - dt * ui * dudx + dt * nu * d2udx2;
+    """,
+    "burgers_central_kernel",
+)
+
+
+def passo_gpu_upwind(u_old, u_new, dx, dt, nu=NU):
+    KERNEL_UPWIND(u_old, dx, dt, nu, np.int32(u_old.size), u_new)
+
+
+def passo_gpu_central(u_old, u_new, dx, dt, nu=NU):
+    KERNEL_CENTRAL(u_old, dx, dt, nu, np.int32(u_old.size), u_new)
 
 
 # ============================================================
@@ -204,6 +229,7 @@ def simular_gpu(Nx, esquema, salvar_snapshots=False):
 
     # solução inicial enviada para a GPU
     u0_gpu = cp.asarray(u0)
+    u1_gpu = cp.empty_like(u0_gpu)
 
     # snapshots em tempos específicos
     snapshots = {}
@@ -213,20 +239,23 @@ def simular_gpu(Nx, esquema, salvar_snapshots=False):
 
     # warm-up para carregar contexto CUDA e evitar medir inicialização
     if esquema == "upwind":
-        _ = passo_gpu_upwind(u0_gpu, dx, dt, NU)
+        passo_gpu_upwind(u0_gpu, u1_gpu, dx, dt, NU)
     else:
-        _ = passo_gpu_central(u0_gpu, dx, dt, NU)
+        passo_gpu_central(u0_gpu, u1_gpu, dx, dt, NU)
     cp.cuda.Stream.null.synchronize()
 
     # reinicializa para a simulação medida
     u_gpu = cp.asarray(u0)
+    u_gpu_new = cp.empty_like(u_gpu)
 
     t0 = time.perf_counter()
     for n in range(nt):
         if esquema == "upwind":
-            u_gpu = passo_gpu_upwind(u_gpu, dx, dt, NU)
+            passo_gpu_upwind(u_gpu, u_gpu_new, dx, dt, NU)
         else:
-            u_gpu = passo_gpu_central(u_gpu, dx, dt, NU)
+            passo_gpu_central(u_gpu, u_gpu_new, dx, dt, NU)
+
+        u_gpu, u_gpu_new = u_gpu_new, u_gpu
 
         if salvar_snapshots:
             t_atual = (n + 1) * dt
