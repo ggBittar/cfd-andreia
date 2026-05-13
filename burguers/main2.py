@@ -22,8 +22,8 @@ refinamentos = [64, 128, 256, 512]
 n_terms = 80
 
 # Parâmetros de estabilidade do esquema explícito
-CFL = 0.20
-FOURIER = 0.20
+CFL = 0.50
+CC = 0.50
 
 # Pasta para salvar os gráficos
 os.makedirs("graficos", exist_ok=True)
@@ -224,7 +224,7 @@ def simular_burgers_cuda(Nx, esquema, c, nu, t_final, n_terms=80):
     umax0 = max(np.max(np.abs(u0)), 1e-12)
 
     dt_adv = CFL * dx / umax0
-    dt_dif = FOURIER * dx * dx / nu
+    dt_dif = CC * dx * dx / nu
     dt = min(dt_adv, dt_dif)
 
     # ajusta dt para bater exatamente em t_final

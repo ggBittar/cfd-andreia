@@ -30,8 +30,8 @@ import cupy as cp
 # ------------------------------
 # Configurações gerais do problema
 # ------------------------------
-X0 = 0.0
-XL = 2.0 * np.pi
+X0 = -1 * np.pi
+XL = 1.0 * np.pi
 C = 1.0
 NU = 0.07
 T_FINAL = 1.0
@@ -46,8 +46,8 @@ NX_CPU_COMPARACAO = 1024
 N_TERMS = 80
 
 # Restrições de estabilidade para o método explícito
-CFL = 0.20
-FOURIER = 0.20
+CFL = 0.1
+CC = 0.20
 
 # Diretórios de saída
 PASTA_GRAFICOS = "graficos"
@@ -113,15 +113,15 @@ def ordem_observada(erros, hs):
 # ============================================================
 # 3) ESCOLHA DO PASSO DE TEMPO
 # ============================================================
-def calcular_dt_explicito(u0, dx, nu=NU, t_final=T_FINAL, cfl=CFL, fourier=FOURIER):
+def calcular_dt_explicito(u0, dx, nu=NU, t_final=T_FINAL, cfl=CFL, cc=CC):
     """
     Escolhe dt com base nas restrições advectiva e difusiva.
     Em seguida ajusta dt para que nt * dt = t_final exatamente.
     """
     umax0 = max(np.max(np.abs(u0)), 1e-12)
-    dt_adv = cfl * dx / umax0
-    dt_dif = fourier * dx * dx / nu
-    dt = min(dt_adv, dt_dif)
+    dt_adv = cc * dx / umax0
+    dt_dif = cc * dx * dx / nu
+    dt = cfl * min(dt_adv, dt_dif)
     nt = int(np.ceil(t_final / dt))
     dt = t_final / nt
     return dt, nt

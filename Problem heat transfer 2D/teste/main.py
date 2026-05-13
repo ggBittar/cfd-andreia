@@ -217,7 +217,7 @@ def plot_node_centered_mesh():
 # ============================================================
 # 7) FUNÇÃO PARA SALVAR O CAMPO DE TEMPERATURA EM UM INSTANTE
 # ============================================================
-def save_temperature_field(T_field, t, file_prefix='temperatura_node_centered'):
+def save_temperature_field(T_field, t, file_prefix='temperatura_no_instante'):
     """
     Salva um gráfico do campo de temperatura em um instante t.
     Como a malha é node-centered, usamos os nós diretamente.
@@ -230,7 +230,7 @@ def save_temperature_field(T_field, t, file_prefix='temperatura_node_centered'):
     plt.scatter(X, Y, s=8)
     plt.xlabel('x (m)')
     plt.ylabel('y (m)')
-    plt.title(f'Distribuição de temperatura em t = {t:.1f} s (node-centered)')
+    plt.title(f'Distribuição de temperatura em t = {t:.1f} s')
     plt.tight_layout()
     plt.savefig(f'graficos/{file_prefix}_t_{t:05.1f}s.png', dpi=300, bbox_inches='tight')
     plt.close()
@@ -391,9 +391,9 @@ plt.colorbar(cp, label='Temperatura (°C)')
 plt.scatter(Xn, Yn, s=8)
 plt.xlabel('x (m)')
 plt.ylabel('y (m)')
-plt.title(f'Distribuição de temperatura em t = {t_final:.1f} s (node-centered)')
+plt.title(f'Distribuição de temperatura em t = {t_final:.1f} s)')
 plt.tight_layout()
-plt.savefig('graficos/temperatura_final_node_centered.png', dpi=300, bbox_inches='tight')
+plt.savefig('graficos/temperatura_final.png', dpi=300, bbox_inches='tight')
 plt.close()
 
 
@@ -406,11 +406,11 @@ plt.plot(time_history, T_mid_history, label='T(x≈0.01, y≈0.005, t)')
 plt.plot(time_history, T_top_history, label='T(x≈0.01, y≈0.01, t)')
 plt.xlabel('Tempo (s)')
 plt.ylabel('Temperatura (°C)')
-plt.title('Histórico de temperatura (malha node-centered)')
+plt.title('Histórico de temperatura')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig('graficos/historico_temperatura_node_centered.png', dpi=300, bbox_inches='tight')
+plt.savefig('graficos/historico_temperatura.png', dpi=300, bbox_inches='tight')
 plt.close()
 
 print('Simulação node-centered concluída.')
