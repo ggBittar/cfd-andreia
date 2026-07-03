@@ -28,26 +28,32 @@ def boundary_conditions(u, v, P, u_max):
 
 def u_estrela(u, v, dx, dy, dt, nu):
     u_star = np.copy(u)
-    for j in range(1, u.shape[0]-1):
-        for i in range(1, u.shape[1]-1):
-            du2_dx = (((u[j, i+1] + u[j, i]) / 2) ** 2 - ((u[j, i] + u[j, i-1]) / 2) ** 2) / dx
-            duv_dy = ((u[j+1, i] + u[j, i]) * (v[j+1, i] + v[j+1, i-1]) - (u[j, i] + u[j-1, i]) * (v[j, i] + v[j, i-1])) / (4*dy)
-            d2u_dx2 = (u[j,i+1] - 2*u[j,i] + u[j,i-1]) / dx**2
-            d2u_dy2 = (u[j+1,i] - 2*u[j,i] + u[j-1,i]) / dy**2
-            
-            u_star[j, i] = u[j, i] + dt * (-du2_dx - duv_dy + nu * (d2u_dx2 + d2u_dy2)) 
+    u_c = u[1:-1, 1:-1]
+
+    du2_dx = (((u[1:-1, 2:] + u_c) / 2.0) ** 2 - ((u_c + u[1:-1, :-2]) / 2.0) ** 2) / dx
+    duv_dy = (
+        (u[2:, 1:-1] + u_c) * (v[2:, 1:-1] + v[2:, :-2])
+        - (u_c + u[:-2, 1:-1]) * (v[1:-1, 1:-1] + v[1:-1, :-2])
+    ) / (4.0 * dy)
+    d2u_dx2 = (u[1:-1, 2:] - 2.0 * u_c + u[1:-1, :-2]) / dx**2
+    d2u_dy2 = (u[2:, 1:-1] - 2.0 * u_c + u[:-2, 1:-1]) / dy**2
+
+    u_star[1:-1, 1:-1] = u_c + dt * (-du2_dx - duv_dy + nu * (d2u_dx2 + d2u_dy2))
     return u_star
 
 def v_estrela(u, v, dx, dy, dt, nu):
     v_star = np.copy(v)
-    for j in range(1, v.shape[0]-1):
-        for i in range(1, v.shape[1]-1):
-            duv_dx = ((u[j,i+1] + u[j,i]) * (v[j+1,i] + v[j+1,i-1]) - (u[j,i] + u[j,i-1]) * (v[j,i] + v[j,i-1])) / (4*dx)
-            dv2_dy = (((v[j+1, i] + v[j, i]) / 2) ** 2 - ((v[j, i] + v[j-1, i]) / 2) ** 2) / dy
-            d2v_dx2 = (v[j,i+1] - 2*v[j,i] + v[j,i-1]) / dx**2
-            d2v_dy2 = (v[j+1,i] - 2*v[j,i] + v[j-1,i]) / dy**2
-            
-            v_star[j, i] = v[j, i] + dt * (-duv_dx - dv2_dy + nu * (d2v_dx2 + d2v_dy2)) 
+    v_c = v[1:-1, 1:-1]
+
+    duv_dx = (
+        (u[1:-1, 2:] + u[1:-1, 1:-1]) * (v[2:, 1:-1] + v[2:, :-2])
+        - (u[1:-1, 1:-1] + u[1:-1, :-2]) * (v_c + v[1:-1, :-2])
+    ) / (4.0 * dx)
+    dv2_dy = (((v[2:, 1:-1] + v_c) / 2.0) ** 2 - ((v_c + v[:-2, 1:-1]) / 2.0) ** 2) / dy
+    d2v_dx2 = (v[1:-1, 2:] - 2.0 * v_c + v[1:-1, :-2]) / dx**2
+    d2v_dy2 = (v[2:, 1:-1] - 2.0 * v_c + v[:-2, 1:-1]) / dy**2
+
+    v_star[1:-1, 1:-1] = v_c + dt * (-duv_dx - dv2_dy + nu * (d2v_dx2 + d2v_dy2))
     return v_star
 
 
@@ -118,24 +124,28 @@ def poisson_pressao_sor(u_star, v_star, config: CavityConfig):
     dx2 = config.dx**2
     dy2 = config.dy**2
     coef = 1.0 / (2.0 / dx2 + 2.0 / dy2)
+    jj, ii = np.indices(rhs.shape)
+    red_mask = (ii + jj) % 2 == 0
+    black_mask = ~red_mask
 
     for iteration in range(1, config.sor_max_iter + 1):
         max_delta = 0.0
-        for j in range(1, config.ny + 1):
-            for i in range(1, config.nx + 1):
-                old = p_corr[j, i]
-                gs_value = coef * (
-                    (p_corr[j, i+1] + p_corr[j, i-1]) / dx2
-                    + (p_corr[j+1, i] + p_corr[j-1, i]) / dy2
-                    - rhs[j-1, i-1]
-                )
-                p_corr[j, i] = (1.0 - config.sor_w) * old + config.sor_w * gs_value
-                max_delta = max(max_delta, abs(p_corr[j, i] - old))
+        for mask in (red_mask, black_mask):
+            p_corr[:, 0] = p_corr[:, 1]
+            p_corr[:, -1] = p_corr[:, -2]
+            p_corr[0, :] = p_corr[1, :]
+            p_corr[-1, :] = p_corr[-2, :]
 
-        p_corr[:, 0] = p_corr[:, 1]
-        p_corr[:, -1] = p_corr[:, -2]
-        p_corr[0, :] = p_corr[1, :]
-        p_corr[-1, :] = p_corr[-2, :]
+            interior = p_corr[1:-1, 1:-1]
+            old_values = interior[mask].copy()
+            gs_values = coef * (
+                (p_corr[1:-1, 2:] + p_corr[1:-1, :-2]) / dx2
+                + (p_corr[2:, 1:-1] + p_corr[:-2, 1:-1]) / dy2
+                - rhs
+            )
+            interior[mask] = (1.0 - config.sor_w) * old_values + config.sor_w * gs_values[mask]
+            max_delta = max(max_delta, float(np.max(np.abs(interior[mask] - old_values))))
+
         p_corr -= p_corr[1:-1, 1:-1].mean()
 
         if max_delta < config.sor_tolerance:
