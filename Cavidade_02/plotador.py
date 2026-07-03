@@ -2,6 +2,110 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+GHIA_RE100_U_Y = np.array([
+    [1.0000, 1.00000],
+    [0.9766, 0.84123],
+    [0.9688, 0.78871],
+    [0.9609, 0.73722],
+    [0.9531, 0.68717],
+    [0.8516, 0.23151],
+    [0.7344, 0.00332],
+    [0.6172, -0.13641],
+    [0.5000, -0.20581],
+    [0.4531, -0.21090],
+    [0.2813, -0.15662],
+    [0.1719, -0.10150],
+    [0.1016, -0.06434],
+    [0.0703, -0.04775],
+    [0.0625, -0.04192],
+    [0.0547, -0.03717],
+    [0.0000, 0.00000],
+])
+
+
+GHIA_RE100_X_V = np.array([
+    [1.0000, 0.00000],
+    [0.9688, -0.05906],
+    [0.9609, -0.07391],
+    [0.9531, -0.08864],
+    [0.9453, -0.10313],
+    [0.9063, -0.16914],
+    [0.8594, -0.22445],
+    [0.8047, -0.24533],
+    [0.5000, 0.05454],
+    [0.2344, 0.17527],
+    [0.2266, 0.17507],
+    [0.1563, 0.16077],
+    [0.0938, 0.12317],
+    [0.0781, 0.10890],
+    [0.0703, 0.10091],
+    [0.0625, 0.09233],
+    [0.0000, 0.00000],
+])
+
+
+def perfis_linhas_centrais(x, y, u, v):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    u = np.asarray(u)
+    v = np.asarray(v)
+
+    i_centro = int(np.argmin(np.abs(x - 0.5 * (x[0] + x[-1]))))
+    j_centro = int(np.argmin(np.abs(y - 0.5 * (y[0] + y[-1]))))
+
+    return {
+        "x_centro": float(x[i_centro]),
+        "y_centro": float(y[j_centro]),
+        "y": y,
+        "u_vertical": u[:, i_centro],
+        "x": x,
+        "v_horizontal": v[j_centro, :],
+    }
+
+
+def plotar_perfis_ghia(
+    x,
+    y,
+    u,
+    v,
+    re=None,
+    comparar_ghia=True,
+    mostrar=True,
+    salvar_em=None,
+):
+    perfis = perfis_linhas_centrais(x, y, u, v)
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+
+    axs[0].plot(perfis["u_vertical"], perfis["y"], "o-", label=f"Presente x={perfis['x_centro']:.4f}")
+    axs[0].set_xlabel("u")
+    axs[0].set_ylabel("y")
+    axs[0].set_title("Perfil u x y na linha vertical central")
+    axs[0].grid(True, alpha=0.3)
+
+    axs[1].plot(perfis["x"], perfis["v_horizontal"], "o-", label=f"Presente y={perfis['y_centro']:.4f}")
+    axs[1].set_xlabel("x")
+    axs[1].set_ylabel("v")
+    axs[1].set_title("Perfil x x v na linha horizontal central")
+    axs[1].grid(True, alpha=0.3)
+
+    if comparar_ghia and re is not None and np.isclose(float(re), 100.0):
+        axs[0].plot(GHIA_RE100_U_Y[:, 1], GHIA_RE100_U_Y[:, 0], "ks", fillstyle="none", label="Ghia Re=100")
+        axs[1].plot(GHIA_RE100_X_V[:, 0], GHIA_RE100_X_V[:, 1], "ks", fillstyle="none", label="Ghia Re=100")
+
+    for ax in axs:
+        ax.legend()
+
+    fig.tight_layout()
+
+    if salvar_em is not None:
+        fig.savefig(salvar_em, dpi=300, bbox_inches="tight")
+
+    if mostrar:
+        plt.show()
+
+    return fig, axs
+
+
 def plotar_campo_velocidade(
     X,
     Y,
@@ -15,7 +119,8 @@ def plotar_campo_velocidade(
     mostrar_magnitude=True,
     salvar_em=None,
     figsize=(8, 6),
-    valor_alvo=1.0
+    valor_alvo=1.0,
+    mostrar=True
 ):
     """
     Plota um campo de velocidade 2D.
@@ -202,6 +307,7 @@ def plotar_campo_velocidade(
     if salvar_em is not None:
         plt.savefig(salvar_em, dpi=300, bbox_inches="tight")
 
-    plt.show()
+    if mostrar:
+        plt.show()
 
     return fig, ax
