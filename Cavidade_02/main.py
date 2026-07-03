@@ -1,4 +1,7 @@
 import numpy as np
+from matplotlib_config import configurar_matplotlib
+
+matplotlib = configurar_matplotlib()
 import matplotlib.pyplot as plt
 
 from params import CavityConfig, DiscretizationTypes, MeshType, MeshTypes, criar_condicoes_iniciais
@@ -80,7 +83,8 @@ if config.plot_results:
     plotar_malha(ax, (X_fisico, Y_fisico), color="tab:blue", label="Pontos da Malha", linestyle="-", size=5)
     ax.set_xlim(0.0, config.lx)
     ax.set_ylim(0.0, config.ly)
-    plt.show()
+    if matplotlib.get_backend().lower() != "agg":
+        plt.show()
     
 if config.plot_results_2:
     fig, ax = plotar_campo_velocidade(
@@ -95,9 +99,11 @@ if config.plot_results_2:
     )
 
     plotar_malha(ax, (X, Y), color="tab:blue", label="Pontos da Malha", linestyle="-", size=5)
-    # ax.set_xlim(0.0, config.lx)
-    # ax.set_ylim(0.0, config.ly)
-    plt.show()
+    ax.set_xlim(0.0, config.lx)
+    ax.set_ylim(0.0, config.ly)
+    ax.set
+    if matplotlib.get_backend().lower() != "agg":
+        plt.show()
 
 if config.plot_profiles:
     plotar_perfis_ghia(

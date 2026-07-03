@@ -1,6 +1,14 @@
 import numpy as np
 from params import CavityConfig, MeshType, MeshTypes, DiscretizationTypes
+from matplotlib_config import configurar_matplotlib
+
+matplotlib = configurar_matplotlib()
 import matplotlib.pyplot as plt
+
+
+def _mostrar_se_interativo():
+    if matplotlib.get_backend().lower() != "agg":
+        plt.show()
 
 
 def gerar_malha(config: CavityConfig, disc: DiscretizationTypes):
@@ -38,7 +46,7 @@ def vizualizar_malha(X: np.ndarray, Y: np.ndarray, mesh_type: MeshType, config: 
         ax.set_title(f"Malha {mesh_type.type}")
         ax.set_aspect("equal")
         configurar_legenda_fora(fig, ax)
-        plt.show()
+        _mostrar_se_interativo()
     elif mesh_type.type == MeshTypes.DF:
         # PX = X[1:-1, 1:-1]
         # PY = Y[1:-1, 1:-1]
@@ -61,7 +69,7 @@ def vizualizar_malha(X: np.ndarray, Y: np.ndarray, mesh_type: MeshType, config: 
         ax.set_title(f"Malha {mesh_type.type}")
         ax.set_aspect("equal")
         configurar_legenda_fora(fig, ax)
-        plt.show()
+        _mostrar_se_interativo()
     elif mesh_type.type == MeshTypes.DB:
         PX = X[1:-1, 1:-1]
         PY = Y[1:-1, 1:-1]
@@ -78,6 +86,6 @@ def vizualizar_malha(X: np.ndarray, Y: np.ndarray, mesh_type: MeshType, config: 
         ax.set_title(f"Malha {mesh_type.type}")
         ax.set_aspect("equal")
         configurar_legenda_fora(fig, ax)
-        plt.show()
+        _mostrar_se_interativo()
     else:
         raise NotImplementedError("Cenas dos próximos capítulos...")

@@ -4,17 +4,17 @@ import numpy as np
 
 @dataclass
 class CavityConfig:
-    nx: int = 129
-    ny: int = 129
+    nx: int = 21 
+    ny: int = 21
     lx: float = 1.0
     ly: float = 1.0
-    rho: float = 1000
+    rho: float = 1.0
     Re: float = 100.0
     u_max: float = 1.0
     t_ini: float = 0.0
     t_final: float = 10
-    CFL: float = 0.1
-    sor_w: float = 1.85
+    CFL: float = 0.01
+    sor_w: float = 1.4
     sor_tolerance: float = 1.0e-5
     sor_max_iter: int = 800
     mass_tolerance: float = 1.0e-3

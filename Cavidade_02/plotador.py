@@ -1,4 +1,7 @@
 import numpy as np
+from matplotlib_config import configurar_matplotlib
+
+matplotlib = configurar_matplotlib()
 import matplotlib.pyplot as plt
 
 
@@ -42,6 +45,11 @@ GHIA_RE100_X_V = np.array([
     [0.0625, 0.09233],
     [0.0000, 0.00000],
 ])
+
+
+def _mostrar_se_interativo():
+    if matplotlib.get_backend().lower() != "agg":
+        plt.show()
 
 
 def perfis_linhas_centrais(x, y, u, v):
@@ -101,7 +109,7 @@ def plotar_perfis_ghia(
         fig.savefig(salvar_em, dpi=300, bbox_inches="tight")
 
     if mostrar:
-        plt.show()
+        _mostrar_se_interativo()
 
     return fig, axs
 
@@ -308,6 +316,6 @@ def plotar_campo_velocidade(
         plt.savefig(salvar_em, dpi=300, bbox_inches="tight")
 
     if mostrar:
-        plt.show()
+        _mostrar_se_interativo()
 
     return fig, ax
