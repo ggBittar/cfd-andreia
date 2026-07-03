@@ -61,6 +61,16 @@ def divergencia(u, v, dx, dy):
     return (u[1:-1, 2:] - u[1:-1, 1:-1]) / dx + (v[2:, 1:-1] - v[1:-1, 1:-1]) / dy
 
 
+def mascaras_red_black(shape):
+    cache = getattr(mascaras_red_black, "_cache", {})
+    if shape not in cache:
+        jj, ii = np.indices(shape)
+        red_mask = (ii + jj) % 2 == 0
+        cache[shape] = (red_mask, ~red_mask)
+        mascaras_red_black._cache = cache
+    return cache[shape]
+
+
 def indice_pressao(i, j, config: CavityConfig):
     return (j - 1) * config.nx + (i - 1)
 
@@ -117,16 +127,23 @@ def montar_matriz_coeficientes_A(config: CavityConfig):
     return A
 
 
-def poisson_pressao_sor(u_star, v_star, config: CavityConfig):
-    p_corr = np.zeros_like(u_star)
+def poisson_pressao_sor(u_star, v_star, config: CavityConfig, p_inicial=None):
+    if p_inicial is None:
+        p_corr = np.zeros_like(u_star)
+    else:
+        p_corr = p_inicial.copy()
+
     rhs = (config.rho / config.dt) * divergencia(u_star, v_star, config.dx, config.dy)
     rhs -= rhs.mean()
     dx2 = config.dx**2
     dy2 = config.dy**2
+    inv_dx2 = 1.0 / dx2
+    inv_dy2 = 1.0 / dy2
     coef = 1.0 / (2.0 / dx2 + 2.0 / dy2)
-    jj, ii = np.indices(rhs.shape)
-    red_mask = (ii + jj) % 2 == 0
-    black_mask = ~red_mask
+    red_mask, black_mask = mascaras_red_black(rhs.shape)
+    omega = config.sor_w
+    um_menos_omega = 1.0 - omega
+    interior = p_corr[1:-1, 1:-1]
 
     for iteration in range(1, config.sor_max_iter + 1):
         max_delta = 0.0
@@ -136,14 +153,13 @@ def poisson_pressao_sor(u_star, v_star, config: CavityConfig):
             p_corr[0, :] = p_corr[1, :]
             p_corr[-1, :] = p_corr[-2, :]
 
-            interior = p_corr[1:-1, 1:-1]
             old_values = interior[mask].copy()
             gs_values = coef * (
-                (p_corr[1:-1, 2:] + p_corr[1:-1, :-2]) / dx2
-                + (p_corr[2:, 1:-1] + p_corr[:-2, 1:-1]) / dy2
+                (p_corr[1:-1, 2:] + p_corr[1:-1, :-2]) * inv_dx2
+                + (p_corr[2:, 1:-1] + p_corr[:-2, 1:-1]) * inv_dy2
                 - rhs
             )
-            interior[mask] = (1.0 - config.sor_w) * old_values + config.sor_w * gs_values[mask]
+            interior[mask] = um_menos_omega * old_values + omega * gs_values[mask]
             max_delta = max(max_delta, float(np.max(np.abs(interior[mask] - old_values))))
 
         p_corr -= p_corr[1:-1, 1:-1].mean()
@@ -157,8 +173,9 @@ def poisson_pressao_sor(u_star, v_star, config: CavityConfig):
 def corrigir_velocidades(u_star, v_star, p_corr, config: CavityConfig):
     u_new = np.copy(u_star)
     v_new = np.copy(v_star)
-    u_new[1:-1, 1:-1] -= (config.dt / config.rho) * (p_corr[1:-1, 1:-1] - p_corr[1:-1, :-2]) / config.dx
-    v_new[1:-1, 1:-1] -= (config.dt / config.rho) * (p_corr[1:-1, 1:-1] - p_corr[:-2, 1:-1]) / config.dy
+    fator_pressao = config.dt / config.rho
+    u_new[1:-1, 1:-1] -= fator_pressao * (p_corr[1:-1, 1:-1] - p_corr[1:-1, :-2]) / config.dx
+    v_new[1:-1, 1:-1] -= fator_pressao * (p_corr[1:-1, 1:-1] - p_corr[:-2, 1:-1]) / config.dy
     return u_new, v_new
 
 
@@ -168,18 +185,51 @@ def passo_fracionado(u, v, P, config: CavityConfig):
     v_star = v_estrela(u, v, config.dx, config.dy, config.dt, config.nu)
     boundary_conditions(u_star, v_star, P, config.u_max)
 
-    p_corr, sor_iter, sor_error = poisson_pressao_sor(u_star, v_star, config)
-    u_new, v_new = corrigir_velocidades(u_star, v_star, p_corr, config)
-    P_new = p_corr
-    boundary_conditions(u_new, v_new, P_new, config.u_max)
+    u_base = u_star
+    v_base = v_star
+    p_base = P
+    sor_iter_total = 0
+    sor_error = np.inf
+    div_anterior = None
+    divergence_delta = np.inf
 
-    div = divergencia(u_new, v_new, config.dx, config.dy)
-    mass_error = float(np.sqrt(np.mean(div**2)))
+    for mass_iter in range(1, config.mass_correction_max_iter + 1):
+        p_star, sor_iter, sor_error = poisson_pressao_sor(u_base, v_base, config, p_base)
+        sor_iter_total += sor_iter
+
+        u_new, v_new = corrigir_velocidades(u_base, v_base, p_star, config)
+        P_new = p_star
+        boundary_conditions(u_new, v_new, P_new, config.u_max)
+
+        div = divergencia(u_new, v_new, config.dx, config.dy)
+        mass_error = float(np.sqrt(np.mean(div**2)))
+        mass_error_max = float(np.max(np.abs(div)))
+        if div_anterior is not None:
+            divergence_delta = float(np.sqrt(np.mean((div - div_anterior)**2)))
+
+        if mass_error <= config.mass_tolerance or divergence_delta <= config.mass_tolerance:
+            break
+
+        div_anterior = div.copy()
+        u_base = u_new
+        v_base = v_new
+        p_base = P_new
+    else:
+        raise FloatingPointError(
+            "A convergência de massa não foi atendida dentro do passo no tempo. "
+            f"mass_error={mass_error:.3e}, tolerância={config.mass_tolerance:.3e}, "
+            f"divergence_delta={divergence_delta:.3e}, "
+            f"correções={config.mass_correction_max_iter}, sor_iter_total={sor_iter_total}. "
+            "Aumente mass_correction_max_iter, relaxe mass_tolerance, reduza CFL ou ajuste sor_w."
+        )
+
     return u_new, v_new, P_new, {
-        "sor_iter": sor_iter,
+        "sor_iter": sor_iter_total,
         "sor_error": float(sor_error),
         "mass_error": mass_error,
-        "mass_error_max": float(np.max(np.abs(div))),
+        "mass_error_max": mass_error_max,
+        "mass_correction_iter": mass_iter,
+        "divergence_delta": float(divergence_delta),
     }
 
 
@@ -225,7 +275,9 @@ def simular(config: CavityConfig, initial_conditions=None):
         ):
             break
 
-        if not np.all(np.isfinite(u)) or not np.all(np.isfinite(v)) or not np.all(np.isfinite(P)):
+        if step % config.report_interval == 0 and (
+            not np.all(np.isfinite(u)) or not np.all(np.isfinite(v)) or not np.all(np.isfinite(P))
+        ):
             raise FloatingPointError("A solução divergiu. Reduza CFL, Re ou sor_w em params.py.")
 
     return u, v, P, historico

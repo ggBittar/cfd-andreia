@@ -18,6 +18,7 @@ class CavityConfig:
     sor_tolerance: float = 1.0e-5
     sor_max_iter: int = 800
     mass_tolerance: float = 1.0e-3
+    mass_correction_max_iter: int = 200
     stop_by_convergence: bool = True
     convergence_tolerance: float = 1.0e-4
     min_steps_before_convergence: int = 10
