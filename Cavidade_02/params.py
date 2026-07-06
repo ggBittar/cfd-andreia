@@ -12,7 +12,7 @@ class CavityConfig:
     Re: float = 100.0
     u_max: float = 1.0
     t_ini: float = 0.0
-    t_final: float = 10
+    t_final: float = 20
     CFL: float = 0.1
     pressure_solver: str = "sor"
     sor_w: float = 1.9
@@ -20,8 +20,8 @@ class CavityConfig:
     sor_max_iter: int = 800
     mass_tolerance: float = 1.0e-3
     mass_correction_max_iter: int = 200
-    stop_by_convergence: bool = False
-    convergence_tolerance: float = 1.0e-4
+    stop_by_convergence: bool = True
+    convergence_tolerance: float = 1.0e-5
     min_steps_before_convergence: int = 10
     max_steps: int = 50000
     report_interval: int = 5
