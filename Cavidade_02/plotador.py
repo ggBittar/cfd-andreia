@@ -66,7 +66,9 @@ def perfis_linhas_centrais(x, y, u, v):
         "y_centro": float(y[j_centro]),
         "y": y,
         "u_vertical": u[:, i_centro],
+        "v_vertical": v[:, i_centro],
         "x": x,
+        "u_horizontal": u[j_centro, :],
         "v_horizontal": v[j_centro, :],
     }
 
@@ -82,36 +84,71 @@ def plotar_perfis_ghia(
     salvar_em=None,
 ):
     perfis = perfis_linhas_centrais(x, y, u, v)
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+    figuras = []
 
-    axs[0].plot(perfis["u_vertical"], perfis["y"], "o-", label=f"Presente x={perfis['x_centro']:.4f}")
-    axs[0].set_xlabel("u")
-    axs[0].set_ylabel("y")
-    axs[0].set_title("Perfil u x y na linha vertical central")
-    axs[0].grid(True, alpha=0.3)
+    def criar_figura(nome, eixo_x, eixo_y, xlabel, ylabel, titulo, label):
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.plot(eixo_x, eixo_y, "o-", label=label)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_title(titulo)
+        ax.grid(True, alpha=0.3)
+        figuras.append((nome, fig, ax))
+        return ax
 
-    axs[1].plot(perfis["x"], perfis["v_horizontal"], "o-", label=f"Presente y={perfis['y_centro']:.4f}")
-    axs[1].set_xlabel("x")
-    axs[1].set_ylabel("v")
-    axs[1].set_title("Perfil x x v na linha horizontal central")
-    axs[1].grid(True, alpha=0.3)
+    ax_u_vertical = criar_figura(
+        "perfil_u_vertical",
+        perfis["u_vertical"],
+        perfis["y"],
+        "u",
+        "y",
+        "Perfil de u na linha vertical central",
+        f"Presente x={perfis['x_centro']:.4f}",
+    )
+    criar_figura(
+        "perfil_v_vertical",
+        perfis["v_vertical"],
+        perfis["y"],
+        "v",
+        "y",
+        "Perfil de v na linha vertical central (sem referência Ghia)",
+        f"Presente x={perfis['x_centro']:.4f}",
+    )
+    criar_figura(
+        "perfil_u_horizontal",
+        perfis["x"],
+        perfis["u_horizontal"],
+        "x",
+        "u",
+        "Perfil de u na linha horizontal central",
+        f"Presente y={perfis['y_centro']:.4f}",
+    )
+    ax_v_horizontal = criar_figura(
+        "perfil_v_horizontal",
+        perfis["x"],
+        perfis["v_horizontal"],
+        "x",
+        "v",
+        "Perfil de v na linha horizontal central (comparação Ghia)",
+        f"Presente y={perfis['y_centro']:.4f}",
+    )
 
     if comparar_ghia and re is not None and np.isclose(float(re), 100.0):
-        axs[0].plot(GHIA_RE100_U_Y[:, 1], GHIA_RE100_U_Y[:, 0], "ks", fillstyle="none", label="Ghia Re=100")
-        axs[1].plot(GHIA_RE100_X_V[:, 0], GHIA_RE100_X_V[:, 1], "ks", fillstyle="none", label="Ghia Re=100")
+        ax_u_vertical.plot(GHIA_RE100_U_Y[:, 1], GHIA_RE100_U_Y[:, 0], "ks", fillstyle="none", label="Ghia Re=100")
+        ax_v_horizontal.plot(GHIA_RE100_X_V[:, 0], GHIA_RE100_X_V[:, 1], "ks", fillstyle="none", label="Ghia Re=100")
 
-    for ax in axs:
+    for _, fig, ax in figuras:
         ax.legend()
-
-    fig.tight_layout()
+        fig.tight_layout()
 
     if salvar_em is not None:
-        fig.savefig(salvar_em, dpi=300, bbox_inches="tight")
+        for nome, fig, _ in figuras:
+            fig.savefig(f"{salvar_em}_{nome}.png", dpi=300, bbox_inches="tight")
 
     if mostrar:
         _mostrar_se_interativo()
 
-    return fig, axs
+    return figuras
 
 
 def plotar_campo_velocidade(
@@ -127,7 +164,6 @@ def plotar_campo_velocidade(
     mostrar_magnitude=True,
     salvar_em=None,
     figsize=(8, 6),
-    valor_alvo=1.0,
     mostrar=True
 ):
     """
@@ -187,17 +223,6 @@ def plotar_campo_velocidade(
         raise ValueError("X, Y, U e V devem ter o mesmo formato.")
 
     magnitude = np.sqrt(U**2 + V**2)
-    
-   
-    tolerancia = 0.2
-
-    faixa = np.where(
-        (magnitude >= valor_alvo - tolerancia) &
-        (magnitude <= valor_alvo + tolerancia),
-        magnitude,
-        np.nan
-    )
-
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -209,14 +234,6 @@ def plotar_campo_velocidade(
         if mostrar_magnitude:
             cbar = fig.colorbar(grafico, ax=ax)
             cbar.set_label("Magnitude da velocidade")
-        ax.contourf(
-            X,
-            Y,
-            faixa,
-            levels=[valor_alvo - tolerancia, valor_alvo + tolerancia],
-            colors=["red"],
-            alpha=0.5
-        )
 
     elif tipo == "quiver":
         if mostrar_magnitude:
@@ -231,14 +248,6 @@ def plotar_campo_velocidade(
             V,
             color="black",
             scale=escala_vetores
-        )
-        ax.contourf(
-            X,
-            Y,
-            faixa,
-            levels=[valor_alvo - tolerancia, valor_alvo + tolerancia],
-            colors=["red"],
-            alpha=0.5
         )
 
     elif tipo == "streamplot":
@@ -255,14 +264,6 @@ def plotar_campo_velocidade(
             V,
             color="black",
             density=densidade
-        )
-        ax.contourf(
-            X,
-            Y,
-            faixa,
-            levels=[valor_alvo - tolerancia, valor_alvo + tolerancia],
-            colors=["red"],
-            alpha=0.5
         )
 
     elif tipo == "completo":
@@ -290,14 +291,6 @@ def plotar_campo_velocidade(
             color="black",
             scale=escala_vetores
         )
-        ax.contourf(
-            X,
-            Y,
-            faixa,
-            levels=[valor_alvo - tolerancia, valor_alvo + tolerancia],
-            colors=["red"],
-            alpha=0.5
-        )
 
     else:
         raise ValueError(
@@ -319,3 +312,51 @@ def plotar_campo_velocidade(
         _mostrar_se_interativo()
 
     return fig, ax
+
+
+def plotar_campos_escalares(
+    X,
+    Y,
+    campos,
+    titulos=None,
+    rotulos=None,
+    cmap="viridis",
+    levels=40,
+    mostrar=True,
+    salvar_em=None,
+    figsize=(15, 4.8),
+):
+    X = np.asarray(X)
+    Y = np.asarray(Y)
+    campos = [np.asarray(campo) for campo in campos]
+
+    if titulos is None:
+        titulos = [f"Campo {i + 1}" for i in range(len(campos))]
+    if rotulos is None:
+        rotulos = titulos
+
+    for campo in campos:
+        if X.shape != Y.shape or X.shape != campo.shape:
+            raise ValueError("X, Y e cada campo escalar devem ter o mesmo formato.")
+
+    fig, axs = plt.subplots(1, len(campos), figsize=figsize, constrained_layout=True)
+    if len(campos) == 1:
+        axs = [axs]
+
+    for ax, campo, titulo, rotulo in zip(axs, campos, titulos, rotulos):
+        grafico = ax.contourf(X, Y, campo, levels=levels, cmap=cmap)
+        cbar = fig.colorbar(grafico, ax=ax)
+        cbar.set_label(rotulo)
+        ax.set_title(titulo)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_aspect("equal", adjustable="box")
+        ax.grid(True, alpha=0.25)
+
+    if salvar_em is not None:
+        fig.savefig(salvar_em, dpi=300, bbox_inches="tight")
+
+    if mostrar:
+        _mostrar_se_interativo()
+
+    return fig, axs

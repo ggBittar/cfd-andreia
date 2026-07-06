@@ -1,28 +1,36 @@
 import numpy as np
 
 from params import CavityConfig
+from pressure_solvers import resolver_poisson_dct, resolver_poisson_fft, resolver_poisson_scipy
 
 
 def boundary_conditions(u, v, P, u_max):
-    """Aplica paredes sem escorregamento e tampa móvel usando células fantasmas."""
-    # Face esquerda
-    u[:, 0] = -u[:, 1]
+    """Aplica paredes para a malha deslocada usada pela projeção.
+
+    A divergência usa u[j, i+1] - u[j, i] e v[j+1, i] - v[j, i].
+    Portanto u[:, 1] e u[:, -1] são faces verticais sólidas, enquanto
+    v[1, :] e v[-1, :] são faces horizontais sólidas.
+    """
+    # Faces verticais: sem penetracao para u e sem escorregamento para v.
+    u[:, 1] = 0.0
+    u[:, -1] = 0.0
+    u[:, 0] = -u[:, 2]
     v[:, 0] = -v[:, 1]
     P[:, 0] = P[:, 1]
 
     # Face direita
-    u[:, -1] = -u[:, -2]
     v[:, -1] = -v[:, -2]
     P[:, -1] = P[:, -2]
 
-    # Face inferior
+    # Faces horizontais: sem penetracao para v e sem escorregamento para u.
+    v[1, :] = 0.0
+    v[-1, :] = 0.0
+    v[0, :] = -v[2, :]
     u[0, :] = -u[1, :]
-    v[0, :] = -v[1, :]
     P[0, :] = P[1, :]
 
     # Face superior
     u[-1, :] = 2 * u_max - u[-2,:]
-    v[-1, :] = - v[-2,:]
     P[-1, :] = P[-2,:]
 
 
@@ -46,8 +54,8 @@ def v_estrela(u, v, dx, dy, dt, nu):
     v_c = v[1:-1, 1:-1]
 
     duv_dx = (
-        (u[1:-1, 2:] + u[1:-1, 1:-1]) * (v[2:, 1:-1] + v[2:, :-2])
-        - (u[1:-1, 1:-1] + u[1:-1, :-2]) * (v_c + v[1:-1, :-2])
+        (u[1:-1, 2:] + u[:-2, 2:]) * (v_c + v[1:-1, 2:])
+        - (u[1:-1, 1:-1] + u[:-2, 1:-1]) * (v_c + v[1:-1, :-2])
     ) / (4.0 * dx)
     dv2_dy = (((v[2:, 1:-1] + v_c) / 2.0) ** 2 - ((v_c + v[:-2, 1:-1]) / 2.0) ** 2) / dy
     d2v_dx2 = (v[1:-1, 2:] - 2.0 * v_c + v[1:-1, :-2]) / dx**2
@@ -59,6 +67,13 @@ def v_estrela(u, v, dx, dy, dt, nu):
 
 def divergencia(u, v, dx, dy):
     return (u[1:-1, 2:] - u[1:-1, 1:-1]) / dx + (v[2:, 1:-1] - v[1:-1, 1:-1]) / dy
+
+
+def velocidades_no_centro(u, v):
+    """Interpola velocidades da malha deslocada para os centros de pressao."""
+    u_centro = 0.5 * (u[1:-1, 1:-1] + u[1:-1, 2:])
+    v_centro = 0.5 * (v[1:-1, 1:-1] + v[2:, 1:-1])
+    return u_centro, v_centro
 
 
 def mascaras_red_black(shape):
@@ -79,7 +94,7 @@ def montar_matriz_coeficientes_A(config: CavityConfig):
     """Monta a matriz A da Poisson da pressão descrita no PDF.
 
     A matriz representa o Laplaciano 2D nos pontos internos de pressão:
-    A @ p = b, onde b = rho/dt * div(u*, v*).
+    A @ p = b, onde b = -rho/dt * div(u*, v*).
 
     Como as condições de contorno da pressão são de gradiente normal nulo,
     a matriz é singular. A primeira linha é substituída por p[0] = 0 para
@@ -100,31 +115,87 @@ def montar_matriz_coeficientes_A(config: CavityConfig):
                 A[k, k] = 1.0
                 continue
 
-            diagonal = -2.0 * (cx + cy)
+            diagonal = 0.0
 
             if i > 1:
-                A[k, indice_pressao(i - 1, j, config)] = cx
-            else:
+                A[k, indice_pressao(i - 1, j, config)] = -cx
                 diagonal += cx
 
             if i < config.nx:
-                A[k, indice_pressao(i + 1, j, config)] = cx
-            else:
+                A[k, indice_pressao(i + 1, j, config)] = -cx
                 diagonal += cx
 
             if j > 1:
-                A[k, indice_pressao(i, j - 1, config)] = cy
-            else:
+                A[k, indice_pressao(i, j - 1, config)] = -cy
                 diagonal += cy
 
             if j < config.ny:
-                A[k, indice_pressao(i, j + 1, config)] = cy
-            else:
+                A[k, indice_pressao(i, j + 1, config)] = -cy
                 diagonal += cy
 
             A[k, k] = diagonal
 
     return A
+
+
+def chave_matriz_A(config: CavityConfig):
+    return (config.nx, config.ny, float(config.dx), float(config.dy))
+
+
+def obter_matriz_coeficientes_A(config: CavityConfig):
+    cache = getattr(obter_matriz_coeficientes_A, "_cache", {})
+    chave = chave_matriz_A(config)
+    if chave not in cache:
+        cache[chave] = montar_matriz_coeficientes_A(config)
+        obter_matriz_coeficientes_A._cache = cache
+    return cache[chave]
+
+
+def obter_estrutura_sor_A(config: CavityConfig):
+    cache = getattr(obter_estrutura_sor_A, "_cache", {})
+    chave = chave_matriz_A(config)
+    if chave not in cache:
+        A = obter_matriz_coeficientes_A(config)
+        diagonal = np.diag(A).copy()
+        estrutura = []
+        for k in range(A.shape[0]):
+            colunas = np.flatnonzero(A[k, :])
+            colunas = colunas[colunas != k]
+            estrutura.append((colunas, A[k, colunas].copy()))
+        cache[chave] = (diagonal, estrutura)
+        obter_estrutura_sor_A._cache = cache
+    return cache[chave]
+
+
+def obter_estrutura_sor_vetorizado(config: CavityConfig):
+    cache = getattr(obter_estrutura_sor_vetorizado, "_cache", {})
+    chave = chave_matriz_A(config)
+    if chave not in cache:
+        cx = 1.0 / config.dx**2
+        cy = 1.0 / config.dy**2
+        diagonal = np.zeros((config.ny, config.nx), dtype=float)
+
+        diagonal[:, 1:] += cx
+        diagonal[:, :-1] += cx
+        diagonal[1:, :] += cy
+        diagonal[:-1, :] += cy
+        diagonal[0, 0] = 1.0
+
+        red_mask, black_mask = mascaras_red_black(diagonal.shape)
+        fixed_mask = np.zeros_like(red_mask, dtype=bool)
+        fixed_mask[0, 0] = True
+
+        cache[chave] = (diagonal, red_mask & ~fixed_mask, black_mask & ~fixed_mask, cx, cy)
+        obter_estrutura_sor_vetorizado._cache = cache
+    return cache[chave]
+
+
+def montar_vetor_b_pressao(u_star, v_star, config: CavityConfig):
+    rhs = (config.rho / config.dt) * divergencia(u_star, v_star, config.dx, config.dy)
+    rhs -= rhs.mean()
+    b = -rhs.reshape(-1)
+    b[0] = 0.0
+    return b
 
 
 def poisson_pressao_sor(u_star, v_star, config: CavityConfig, p_inicial=None):
@@ -133,49 +204,79 @@ def poisson_pressao_sor(u_star, v_star, config: CavityConfig, p_inicial=None):
     else:
         p_corr = p_inicial.copy()
 
-    rhs = (config.rho / config.dt) * divergencia(u_star, v_star, config.dx, config.dy)
-    rhs -= rhs.mean()
-    dx2 = config.dx**2
-    dy2 = config.dy**2
-    inv_dx2 = 1.0 / dx2
-    inv_dy2 = 1.0 / dy2
-    coef = 1.0 / (2.0 / dx2 + 2.0 / dy2)
-    red_mask, black_mask = mascaras_red_black(rhs.shape)
+    diagonal, red_mask, black_mask, cx, cy = obter_estrutura_sor_vetorizado(config)
+    b = montar_vetor_b_pressao(u_star, v_star, config).reshape(config.ny, config.nx)
+    p = p_corr[1:-1, 1:-1].copy()
     omega = config.sor_w
     um_menos_omega = 1.0 - omega
-    interior = p_corr[1:-1, 1:-1]
+
+    def atualizar_cor(mask):
+        soma_vizinhos = np.zeros_like(p)
+        soma_vizinhos[:, 1:] += cx * p[:, :-1]
+        soma_vizinhos[:, :-1] += cx * p[:, 1:]
+        soma_vizinhos[1:, :] += cy * p[:-1, :]
+        soma_vizinhos[:-1, :] += cy * p[1:, :]
+
+        old_values = p[mask].copy()
+        gs_values = (b + soma_vizinhos) / diagonal
+        p[mask] = um_menos_omega * old_values + omega * gs_values[mask]
+        return float(np.max(np.abs(p[mask] - old_values))) if old_values.size else 0.0
 
     for iteration in range(1, config.sor_max_iter + 1):
-        max_delta = 0.0
-        for mask in (red_mask, black_mask):
+        max_delta = max(atualizar_cor(red_mask), atualizar_cor(black_mask))
+
+        if max_delta < config.sor_tolerance:
+            p_corr[1:-1, 1:-1] = p
             p_corr[:, 0] = p_corr[:, 1]
             p_corr[:, -1] = p_corr[:, -2]
             p_corr[0, :] = p_corr[1, :]
             p_corr[-1, :] = p_corr[-2, :]
-
-            old_values = interior[mask].copy()
-            gs_values = coef * (
-                (p_corr[1:-1, 2:] + p_corr[1:-1, :-2]) * inv_dx2
-                + (p_corr[2:, 1:-1] + p_corr[:-2, 1:-1]) * inv_dy2
-                - rhs
-            )
-            interior[mask] = um_menos_omega * old_values + omega * gs_values[mask]
-            max_delta = max(max_delta, float(np.max(np.abs(interior[mask] - old_values))))
-
-        p_corr -= p_corr[1:-1, 1:-1].mean()
-
-        if max_delta < config.sor_tolerance:
             return p_corr, iteration, max_delta
 
+    p_corr[1:-1, 1:-1] = p
+    p_corr[:, 0] = p_corr[:, 1]
+    p_corr[:, -1] = p_corr[:, -2]
+    p_corr[0, :] = p_corr[1, :]
+    p_corr[-1, :] = p_corr[-2, :]
     return p_corr, config.sor_max_iter, max_delta
+
+
+def poisson_pressao_dct(u_star, v_star, config: CavityConfig, p_inicial=None):
+    b = montar_vetor_b_pressao(u_star, v_star, config).reshape(config.ny, config.nx)
+    return resolver_poisson_dct(b, config, u_star.shape)
+
+
+def poisson_pressao_fft(u_star, v_star, config: CavityConfig, p_inicial=None):
+    b = montar_vetor_b_pressao(u_star, v_star, config).reshape(config.ny, config.nx)
+    return resolver_poisson_fft(b, config, u_star.shape)
+
+
+def poisson_pressao_scipy(u_star, v_star, config: CavityConfig, p_inicial=None, metodo="cg"):
+    b = montar_vetor_b_pressao(u_star, v_star, config).reshape(config.ny, config.nx)
+    return resolver_poisson_scipy(b, config, u_star.shape, p_inicial=p_inicial, metodo=metodo)
+
+
+def poisson_pressao(u_star, v_star, config: CavityConfig, p_inicial=None):
+    solver = config.pressure_solver.lower()
+    if solver == "sor":
+        return poisson_pressao_sor(u_star, v_star, config, p_inicial)
+    if solver == "dct":
+        return poisson_pressao_dct(u_star, v_star, config, p_inicial)
+    if solver == "fft":
+        return poisson_pressao_fft(u_star, v_star, config, p_inicial)
+    if solver in ("scipy", "scipy_cg"):
+        return poisson_pressao_scipy(u_star, v_star, config, p_inicial, metodo="cg")
+    if solver == "scipy_bicgstab":
+        return poisson_pressao_scipy(u_star, v_star, config, p_inicial, metodo="bicgstab")
+    raise ValueError("pressure_solver deve ser 'sor', 'dct', 'fft', 'scipy_cg' ou 'scipy_bicgstab'.")
 
 
 def corrigir_velocidades(u_star, v_star, p_corr, config: CavityConfig):
     u_new = np.copy(u_star)
     v_new = np.copy(v_star)
     fator_pressao = config.dt / config.rho
-    u_new[1:-1, 1:-1] -= fator_pressao * (p_corr[1:-1, 1:-1] - p_corr[1:-1, :-2]) / config.dx
-    v_new[1:-1, 1:-1] -= fator_pressao * (p_corr[1:-1, 1:-1] - p_corr[:-2, 1:-1]) / config.dy
+    u_new[1:-1, 2:-1] -= fator_pressao * (p_corr[1:-1, 2:-1] - p_corr[1:-1, 1:-2]) / config.dx
+    v_new[2:-1, 1:-1] -= fator_pressao * (p_corr[2:-1, 1:-1] - p_corr[1:-2, 1:-1]) / config.dy
     return u_new, v_new
 
 
@@ -194,7 +295,7 @@ def passo_fracionado(u, v, P, config: CavityConfig):
     divergence_delta = np.inf
 
     for mass_iter in range(1, config.mass_correction_max_iter + 1):
-        p_star, sor_iter, sor_error = poisson_pressao_sor(u_base, v_base, config, p_base)
+        p_star, sor_iter, sor_error = poisson_pressao(u_base, v_base, config, p_base)
         sor_iter_total += sor_iter
 
         u_new, v_new = corrigir_velocidades(u_base, v_base, p_star, config)
@@ -224,6 +325,9 @@ def passo_fracionado(u, v, P, config: CavityConfig):
         )
 
     return u_new, v_new, P_new, {
+        "pressure_solver": config.pressure_solver,
+        "pressure_iter": sor_iter_total,
+        "pressure_error": float(sor_error),
         "sor_iter": sor_iter_total,
         "sor_error": float(sor_error),
         "mass_error": mass_error,
